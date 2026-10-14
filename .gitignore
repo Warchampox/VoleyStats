@@ -1,0 +1,10 @@
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Videos locales para pruebas (nunca se suben)
+videos/
+*.mp4
+*.mov
+*.mkv
