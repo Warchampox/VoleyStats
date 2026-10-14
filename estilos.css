@@ -194,6 +194,8 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
   max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chip-fuente:hover { color: var(--texto); border-color: var(--borde-fuerte); }
+.chip-sonido { top: auto; left: auto; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; max-width: none; }
+.chip-sonido kbd { min-width: 18px; height: 18px; font-size: 10.5px; }
 .badge-pausado {
   position: absolute; top: 12px; right: 12px;
   padding: 4px 8px;

@@ -141,5 +141,23 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 - Marcador: nombres largos de equipo en una línea con «…».
 - `?v=14`.
 
+### Auditoría y controles de video (2026-10-14)
+
+- Ctrl+Z tras recargar y controles de video bajo 1440 px: ya estaban hechos (commit
+  33a97d4, sección «Auditoría antes del primer partido real»). Sin cambios.
+- Saltos de 10 s: J / L y Shift+← / Shift+→ (`SALTO_LARGO_SEGUNDOS = 10`, teclas
+  `atrasLargo` / `adelanteLargo` en `TECLAS`). ← / → solos siguen en 3 s.
+- Silencio: tecla M y botón abajo a la derecha del video («🔊 Sonido» / «🔇 Sin sonido»),
+  visible solo con video cargado. `Video.silenciar(bool)` con `yt.mute()/unMute()` o
+  `el.muted`; se aplica en `onReady` de YouTube y en `cargarArchivo`. Se recuerda en
+  `voleystats:prefs` → `silencio`.
+- J, L y M no chocan con ninguna tecla de captura (verificado contra `TECLAS`).
+- Panel de estado: las teclas de video ahora son 5; el paso «rally cerrado» va en
+  4 columnas para no crecer (algunas etiquetas se cortan con «…»).
+- `?v=15` (14 ya estaba publicado con el punto sin jugada).
+- Conocido, sin cambiar: con un video de YouTube recién cargado que nunca se ha
+  reproducido (estado «sin iniciar»), YouTube solo acepta el primer salto. Después de
+  reproducir una vez, todos los saltos funcionan.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

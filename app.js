@@ -12,6 +12,9 @@ const TECLAS = {
   reproducir: ' ',
   atras: 'arrowleft',
   adelante: 'arrowright',
+  atrasLargo: 'j', // también Shift+←
+  adelanteLargo: 'l', // también Shift+→
+  silencio: 'm',
   cuadroAtras: ',',
   cuadroAdelante: '.',
   nuevoRally: 'enter',
@@ -28,6 +31,7 @@ const TECLAS = {
 };
 
 const SALTO_SEGUNDOS = 3;
+const SALTO_LARGO_SEGUNDOS = 10;
 const CUADRO_SEGUNDOS = 1 / 30;
 const VELOCIDADES = [0.25, 0.5, 1, 1.5, 2];
 
@@ -143,7 +147,7 @@ const ACCIONES_CON_JUGADOR = ['recepcion', 'ataque'];
 const VERSION_DATOS = 1;
 
 let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
-let prefs = { pausarAlMarcar: true, velocidad: 1, leyenda: false };
+let prefs = { pausarAlMarcar: true, velocidad: 1, leyenda: false, silencio: false };
 
 // Cada cambio futuro al formato agrega en migrarPartido un paso
 // (version N → N+1). Se usa al cargar localStorage y al importar archivos.
@@ -420,6 +424,7 @@ const Video = {
   el: null,
   urlObjeto: null,
   vel: 1,
+  mudo: false,
 
   tiempo() {
     if (this.fuente === 'youtube' && this.ytListo) return this.yt.getCurrentTime() || 0;
@@ -461,6 +466,11 @@ const Video = {
     }
   },
   mover(delta) { this.saltar(this.tiempo() + delta); },
+  silenciar(mudo) {
+    this.mudo = mudo;
+    if (this.fuente === 'youtube' && this.ytListo) { if (mudo) this.yt.mute(); else this.yt.unMute(); }
+    else if (this.fuente === 'local') this.el.muted = mudo;
+  },
   velocidad(v) {
     this.vel = v;
     if (this.fuente === 'youtube' && this.ytListo) this.yt.setPlaybackRate(v);
@@ -498,6 +508,7 @@ const Video = {
             this.ytListo = true;
             this.yt.getIframe().setAttribute('tabindex', '-1');
             this.velocidad(this.vel);
+            this.silenciar(this.mudo);
             this.sinSubtitulos();
             resolver();
           },
@@ -521,6 +532,7 @@ const Video = {
     this.el.src = this.urlObjeto;
     this.el.hidden = false;
     this.el.playbackRate = this.vel;
+    this.el.muted = !!this.mudo;
   },
 
   soltarLocal() {
@@ -1020,6 +1032,8 @@ function contenidoEstado(e) {
     teclaItem('Ctrl+Z', deshacerTxt),
     teclaItem('Espacio', 'Reproducir / pausar'),
     `<div class="tecla-item">${kbd('←')}${kbd('→')}<span>−3 s / +3 s</span></div>`,
+    `<div class="tecla-item">${kbd('J')}${kbd('L')}<span>−10 s / +10 s</span></div>`,
+    teclaItem('M', Video.mudo ? 'Activar sonido' : 'Silenciar'),
   ];
   const scoutNom = p ? nombre(p.scouteado) : '';
 
@@ -1039,7 +1053,7 @@ function contenidoEstado(e) {
         return {
           tipo: 'tecla', titulo: `Listo para el set ${set.numero}`,
           contexto: `Enter marca el saque del primer rally en el segundo actual. Antes, ${rot ? 'revisa: ' + rotTxt : rotTxt}.`,
-          teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c3',
+          teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c4',
         };
       }
       const n = set.rallies.length;
@@ -1047,7 +1061,7 @@ function contenidoEstado(e) {
       return {
         tipo: 'tecla', titulo: `Rally ${n} cerrado · punto ${nombre(ultimo.gana)}`,
         contexto: `${giro}Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
-        teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c3',
+        teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c4',
       };
     }
 
@@ -1074,7 +1088,7 @@ function contenidoEstado(e) {
       return {
         tipo: 'tecla', titulo: `Set ${e.set.numero} terminado · ${f[0]}–${f[1]}`,
         contexto: `Enter abre el set ${e.set.numero + 1}.`,
-        teclas: [teclaItem('Enter', 'Set nuevo', '', true), ...teclasVideo], cols: 'c2',
+        teclas: [teclaItem('Enter', 'Set nuevo', '', true), ...teclasVideo], cols: 'c3',
       };
     }
 
@@ -1083,7 +1097,7 @@ function contenidoEstado(e) {
       return {
         tipo: '', titulo: `Partido terminado · ${g[0]}–${g[1]}`,
         contexto: 'Ctrl+Z deshace el último punto si hace falta corregir.',
-        teclas: teclasVideo, cols: 'c2',
+        teclas: teclasVideo, cols: 'c3',
       };
     }
 
@@ -1537,7 +1551,23 @@ function renderCargaVideo() {
     : 'Pega el link de YouTube o abre el archivo descargado. El archivo no se sube a ningún lado.';
   const chip = $('chip-fuente');
   chip.hidden = !Video.fuente;
+  renderSonido();
   if (Video.fuente) chip.textContent = Video.fuente === 'youtube' ? 'YouTube' : `Archivo local · ${p && p.video ? p.video.nombre : ''}`;
+}
+
+function renderSonido() {
+  const b = $('btn-sonido');
+  b.hidden = !Video.fuente;
+  b.innerHTML = `${Video.mudo ? '🔇 Sin sonido' : '🔊 Sonido'} <kbd>M</kbd>`;
+  b.title = Video.mudo ? 'Activar sonido (M)' : 'Silenciar (M)';
+}
+
+function alternarSilencio() {
+  Video.silenciar(!Video.mudo);
+  prefs.silencio = Video.mudo;
+  guardarPrefs();
+  renderSonido();
+  renderEstado();
 }
 
 function renderControles() {
@@ -2041,8 +2071,11 @@ document.addEventListener('keydown', (ev) => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
   if (k === TECLAS.reproducir) { ev.preventDefault(); if (!ev.repeat) Video.alternar(); return; }
-  if (k === TECLAS.atras) { ev.preventDefault(); Video.mover(-SALTO_SEGUNDOS); return; }
-  if (k === TECLAS.adelante) { ev.preventDefault(); Video.mover(SALTO_SEGUNDOS); return; }
+  if (k === TECLAS.atras) { ev.preventDefault(); Video.mover(ev.shiftKey ? -SALTO_LARGO_SEGUNDOS : -SALTO_SEGUNDOS); return; }
+  if (k === TECLAS.adelante) { ev.preventDefault(); Video.mover(ev.shiftKey ? SALTO_LARGO_SEGUNDOS : SALTO_SEGUNDOS); return; }
+  if (k === TECLAS.atrasLargo) { ev.preventDefault(); Video.mover(-SALTO_LARGO_SEGUNDOS); return; }
+  if (k === TECLAS.adelanteLargo) { ev.preventDefault(); Video.mover(SALTO_LARGO_SEGUNDOS); return; }
+  if (k === TECLAS.silencio) { ev.preventDefault(); if (!ev.repeat) alternarSilencio(); return; }
   if (k === TECLAS.cuadroAtras) { ev.preventDefault(); Video.cuadro(-1); return; }
   if (k === TECLAS.cuadroAdelante) { ev.preventDefault(); Video.cuadro(1); return; }
 
@@ -2510,6 +2543,7 @@ function conectarEventos() {
     render();
   });
   $('video-capa').addEventListener('click', () => Video.alternar());
+  $('btn-sonido').addEventListener('click', alternarSilencio);
 
   $('btn-atras').addEventListener('click', () => Video.mover(-SALTO_SEGUNDOS));
   $('btn-adelante').addEventListener('click', () => Video.mover(SALTO_SEGUNDOS));
@@ -2573,6 +2607,7 @@ function conectarEventos() {
 function iniciar() {
   Video.el = $('video-local');
   Video.vel = VELOCIDADES.includes(prefs.velocidad) ? prefs.velocidad : 1;
+  Video.mudo = !!prefs.silencio;
   restaurarHistorialSesion();
   window.addEventListener('pagehide', guardarHistorialSesion);
   conectarEventos();
