@@ -18,6 +18,8 @@ const TECLAS = {
   cancelar: 'escape',
   cerrarSinAtaque: 'g',
   recovery: 't',
+  pasaLibre: 'f',
+  recibeLibre: 'b',
   calificacion: { '1': '#', '2': '+', '3': '!', '4': '-', '5': '=' },
   armada: { q: 'primer', w: 'alta', e: 'rapida', r: 'pipe' },
   golpe: { c: 'corto', v: 'largo' },
@@ -249,14 +251,19 @@ function indiceRallyVigente(set) {
   return rallyAbierto(set) ? set.rallies.length - 1 : set.rallies.length;
 }
 
-// Secuencias de un rally: cada una termina en un ataque con resultado.
+// Secuencias de un rally: cada una termina en un ataque con resultado
+// o en un balón libre pasado al otro lado.
+function cierraSecuencia(a) {
+  return (a.tipo === 'ataque' && a.resultado) || a.tipo === 'pasaLibre';
+}
+
 function secuencias(r) {
   const res = [];
   let actual = [];
   for (const a of r.acciones) {
     if (a.tipo === 'saque') continue;
     actual.push(a);
-    if (a.tipo === 'ataque' && a.resultado) { res.push(actual); actual = []; }
+    if (cierraSecuencia(a)) { res.push(actual); actual = []; }
   }
   if (actual.length) res.push(actual);
   return res;
@@ -267,6 +274,7 @@ function faseArmada(r, armada) {
   const previa = r.acciones[i - 1];
   if (previa && previa.tipo === 'recepcion') return 'recepcion';
   if (previa && previa.tipo === 'recovery') return 'recovery';
+  if (previa && previa.tipo === 'recibeLibre') return 'libre';
   return 'contra';
 }
 
@@ -441,18 +449,25 @@ const Video = {
     await new Promise((resolver, rechazar) => {
       this.yt = new YT.Player('yt-host', {
         videoId: id,
-        playerVars: { controls: 0, disablekb: 1, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0 },
+        playerVars: { controls: 0, disablekb: 1, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0, cc_load_policy: 0 },
         events: {
           onReady: () => {
             this.ytListo = true;
             this.yt.getIframe().setAttribute('tabindex', '-1');
             this.velocidad(this.vel);
+            this.sinSubtitulos();
             resolver();
           },
+          // YouTube vuelve a activar los subtítulos al reproducir si el usuario los tiene por defecto
+          onStateChange: (ev) => { if (ev.data === YT.PlayerState.PLAYING) this.sinSubtitulos(); },
           onError: () => rechazar(new Error('video')),
         },
       });
     });
+  },
+
+  sinSubtitulos() {
+    try { this.yt.unloadModule('captions'); this.yt.unloadModule('cc'); } catch (e) { /* sin módulo */ }
   },
 
   cargarArchivo(archivo) {
@@ -649,6 +664,21 @@ function teclaCaptura(k) {
     return true;
   }
 
+  if (modo === 'armadaTipo' && k === TECLAS.pasaLibre) {
+    const t = tiempoActual();
+    alMarcar(set);
+    mutar('Pasa libre', () => { r.acciones.push({ tipo: 'pasaLibre', equipo: p.scouteado, t }); });
+    return true;
+  }
+
+  if (modo === 'armadaTipo' && k === TECLAS.recibeLibre) {
+    if (e.ultima.tipo === 'recibeLibre') return true;
+    const t = tiempoActual();
+    alMarcar(set);
+    mutar('Recibe libre', () => { r.acciones.push({ tipo: 'recibeLibre', equipo: p.scouteado, t }); });
+    return true;
+  }
+
   if (modo === 'armadaTipo' && k === TECLAS.recovery) {
     if (e.ultima.tipo === 'recovery') return true;
     const t = tiempoActual();
@@ -824,22 +854,26 @@ function celdasPasos(e) {
   if (e.r) {
     // Rally abierto tras un ataque que sigue: empieza una secuencia nueva
     const ult = seq[seq.length - 1];
-    if (ult && ult.tipo === 'ataque' && ult.resultado) { seq = []; indice = seqs.length; }
+    if (ult && cierraSecuencia(ult)) { seq = []; indice = seqs.length; }
   }
   const rec = seq.find((a) => a.tipo === 'recepcion');
   const recov = seq.find((a) => a.tipo === 'recovery');
+  const libreRec = seq.find((a) => a.tipo === 'recibeLibre');
+  const librePasa = seq.find((a) => a.tipo === 'pasaLibre');
   const arm = seq.find((a) => a.tipo === 'armada');
   const atq = seq.find((a) => a.tipo === 'ataque');
   const scout = (e.p || partido()).scouteado;
 
   if (rec) c[0] = { valor: '✓ ' + rec.calif };
   else if (recov) c[0] = { valor: 'Recovery' };
+  else if (libreRec) c[0] = { valor: 'Libre' };
   else if (r.saca === scout || indice > 0) c[0] = { valor: 'Contra' };
 
   if (arm) {
     const z = zonaAtaque(arm);
     c[1] = { valor: `✓ ${ARMADAS[arm.armada].corto}${z ? ' → ' + z : ''}` };
   }
+  if (librePasa) c[1] = { valor: '✓ Pasa libre' };
   if (atq) c[2] = { valor: '✓ ' + GOLPES[atq.golpe].nombre };
   if (atq && atq.resultado) c[3] = { valor: '✓ ' + RESULTADOS[atq.resultado].nombre };
 
@@ -939,6 +973,8 @@ function contenidoEstado(e) {
       let fase;
       if (ult.tipo === 'recepcion') fase = `Side-out tras recepción ${ult.calif}.`;
       else if (ult.tipo === 'recovery') fase = 'Recovery.';
+      else if (ult.tipo === 'recibeLibre') fase = 'Balón libre recibido.';
+      else if (ult.tipo === 'pasaLibre') fase = `Pasó libre: la siguiente armada es contraataque.`;
       else if (ult.tipo === 'saque') fase = `Saca ${scoutNom}: la siguiente armada es contraataque.`;
       else fase = `Contraataque tras «${RESULTADOS[ult.resultado].nombre.toLowerCase()}».`;
       return {
@@ -947,6 +983,8 @@ function contenidoEstado(e) {
         teclas: [
           ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), ARMADAS[t].nombre, muestra(t))),
           teclaItem(nombreTecla(TECLAS.recovery), 'Recovery'),
+          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe balón libre'),
+          teclaItem(nombreTecla(TECLAS.pasaLibre), 'Pasa balón libre'),
           teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar rally sin ataque'),
         ],
         cols: 'c2',
@@ -1173,6 +1211,8 @@ function filaAccion(r, a) {
     case 'saque': tipo = 'Saque'; det = `<span style="font-family:var(--sans)">${esc(nombre(a.equipo))}</span>`; break;
     case 'recepcion': tipo = 'Recepción'; det = `${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>`; break;
     case 'recovery': tipo = 'Recovery'; det = `<span class="calc">${esc(nombre(p.scouteado))}</span>`; break;
+    case 'recibeLibre': tipo = 'Libre'; det = '<span class="calc">recibe balón libre</span>'; break;
+    case 'pasaLibre': tipo = 'Libre'; det = '<span class="calc">pasa al otro lado</span>'; break;
     case 'armada': {
       tipo = 'Armada';
       const z = zonaAtaque(a);

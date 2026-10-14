@@ -41,4 +41,15 @@ Decisiones de implementación a confirmar con Martín:
 
 No probado todavía: archivo de video local (falta probarlo con un archivo real).
 
+### Ajustes tras la primera prueba de Martín (mismo día)
+
+- Subtítulos de YouTube desactivados (`cc_load_policy: 0` y se descarga el módulo
+  de subtítulos al reproducir).
+- El panel de estado crece si hace falta: el texto ya no se monta sobre las teclas.
+- La columna de tiempo del rally actual cabe en videos de más de una hora.
+- Balón libre, pedido por Martín (en el paso de armada, típicamente tras una defensa):
+  F = el equipo scouteado pasa balón libre (acción `pasaLibre`; el rally sigue),
+  B = el equipo scouteado recibe balón libre (acción `recibeLibre`; la armada que
+  sigue se clasifica como fase «libre»).
+
 **Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.
