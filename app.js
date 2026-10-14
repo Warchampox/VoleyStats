@@ -237,15 +237,26 @@ function sacaSiguiente(set) {
   return ultimo ? ultimo.gana : set.primerSaque;
 }
 
-// La rotación se deriva: rotación inicial del set + correcciones manuales.
-// (La rotación automática por side-out llega en la fase 3.)
+// Orden de rotación del armador: P1 → P6 → P5 → P4 → P3 → P2 → P1.
+function rotar(rot) { return rot === 1 ? 6 : rot - 1; }
+
+// La rotación se deriva: rotación inicial del set, un giro por cada side-out
+// ganado por el equipo y las correcciones manuales (fijan la rotación del
+// rally «desde»; desde ahí sigue rotando sola). Nada de esto se guarda por rally.
 function rotacionEn(set, indice, equipo) {
   let rot = set.rotInicial[equipo];
-  for (const c of set.correcciones) {
-    if (c.equipo === equipo && c.desde <= indice) rot = c.rot;
+  for (let i = 0; i <= indice; i++) {
+    for (const c of set.correcciones) {
+      if (c.equipo === equipo && c.desde === i) rot = c.rot;
+    }
+    if (i === indice) break;
+    const r = set.rallies[i];
+    if (rot && r && r.gana === equipo && r.saca !== equipo) rot = rotar(rot);
   }
   return rot;
 }
+
+function fueSideOut(r, equipo) { return r.gana === equipo && r.saca !== equipo; }
 
 function indiceRallyVigente(set) {
   return rallyAbierto(set) ? set.rallies.length - 1 : set.rallies.length;
@@ -505,7 +516,7 @@ const ui = {
 // Selecciones en curso que todavía no son una acción guardada.
 let pendiente = nuevoPendiente();
 function nuevoPendiente() {
-  return { armada: null, golpe: 'remate', cerrar: false, elegirSaque: null };
+  return { armada: null, golpe: 'remate', cerrar: false, elegirSaque: null, elegirRotacion: null };
 }
 
 const historial = [];
@@ -545,6 +556,7 @@ function estado() {
   if (!p) return { modo: 'sinPartido' };
   const set = setActual(p);
   if (pendiente.elegirSaque) return { modo: 'elegirSaque', p, set };
+  if (pendiente.elegirRotacion) return { modo: 'elegirRotacion', p, set };
   if (partidoTerminado(p)) return { modo: 'partidoTerminado', p, set };
   if (set.final) return { modo: 'setTerminado', p, set };
   const r = rallyAbierto(set);
@@ -618,12 +630,32 @@ function teclaCaptura(k) {
       const saca = TECLAS.ganador[k];
       mutar(`Saca ${nombre(saca)}`, () => {
         const t = pendiente.elegirSaque.t;
+        if (set.rotInicial[p.scouteado]) {
+          set.primerSaque = saca;
+          abrirRally(set, saca, t);
+        } else {
+          pendiente.elegirSaque = null;
+          pendiente.elegirRotacion = { t, saca };
+        }
+      });
+      return true;
+    }
+    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirSaque = null; }); return true; }
+    return false;
+  }
+
+  if (modo === 'elegirRotacion') {
+    const rot = Number(k);
+    if (rot >= 1 && rot <= 6) {
+      mutar(`Armador en P${rot}`, () => {
+        const { t, saca } = pendiente.elegirRotacion;
+        set.rotInicial[p.scouteado] = rot;
         set.primerSaque = saca;
         abrirRally(set, saca, t);
       });
       return true;
     }
-    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirSaque = null; }); return true; }
+    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirRotacion = null; }); return true; }
     return false;
   }
 
@@ -754,8 +786,10 @@ function corregirRotacion(rot) {
   const equipo = p.scouteado;
   const desde = indiceRallyVigente(set);
   mutar(`Rotación P${rot}`, () => {
-    if (desde === 0) { set.rotInicial[equipo] = rot; return; }
     set.correcciones = set.correcciones.filter((c) => !(c.equipo === equipo && c.desde === desde));
+    if (desde === 0) { set.rotInicial[equipo] = rot; return; }
+    // Solo se guarda si difiere de lo que da la rotación automática
+    if (rotacionEn(set, desde, equipo) === rot) return;
     set.correcciones.push({ equipo, desde, rot });
     set.correcciones.sort((a, b) => a.desde - b.desde);
   });
@@ -916,9 +950,10 @@ function contenidoEstado(e) {
         };
       }
       const n = set.rallies.length;
+      const giro = rot && fueSideOut(ultimo, p.scouteado) ? `Side-out: el armador pasa a P${rot}. ` : '';
       return {
         tipo: 'tecla', titulo: `Rally ${n} cerrado · punto ${nombre(ultimo.gana)}`,
-        contexto: `Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}, ${rotTxt}.`,
+        contexto: `${giro}Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
         teclas: [teclaItem('Enter', 'Nuevo rally', '', true), ...teclasVideo], cols: 'c2',
       };
     }
@@ -928,6 +963,17 @@ function contenidoEstado(e) {
         tipo: 'tecla', titulo: '¿Quién saca el primer rally?',
         contexto: `Set ${e.set.numero} · el rally parte en ${fmtTiempo(pendiente.elegirSaque.t)}.`,
         teclas: [teclaItem('1', nombre('propio'), '', true), teclaItem('2', nombre('rival'), '', true), teclaItem('Esc', 'Cancelar')], cols: 'c3',
+      };
+
+    case 'elegirRotacion':
+      return {
+        tipo: 'tecla', titulo: `¿Dónde parte el armador del ${scoutNom}?`,
+        contexto: `Rotación inicial del set ${e.set.numero}. Después rota sola en cada side-out; un clic en P1–P6 corrige.`,
+        teclas: [
+          ...[1, 2, 3, 4, 5, 6].map((n) => teclaItem(String(n), `P${n}`, '', true)),
+          teclaItem('Esc', 'Cancelar'),
+        ],
+        cols: 'c3',
       };
 
     case 'setTerminado': {

@@ -35,7 +35,7 @@ Decisiones de implementación a confirmar con Martín:
 - «Contra» no es una acción guardada: se deduce, porque es toda armada que no
   viene después de una recepción o de un recovery. «Recovery» sí es una acción.
 - La rotación no se guarda por rally: rotación inicial del set más correcciones
-  (`set.correcciones`, desde el rally N). Por ahora no rota sola (fase 3).
+  (`set.correcciones`, desde el rally N).
 - Fin de set automático a 25 (15 en el 5.º) con diferencia de 2. Enter abre el set siguiente.
 - Se scoutea un solo equipo por partido (Rival o Propio). «Ambos» queda pendiente.
 
@@ -54,5 +54,15 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 
 - Caché: Pages sirve los archivos con `max-age=600`. index.html carga
   `estilos.css?v=N` y `app.js?v=N`. **Subir N en cada publicación** que cambie esos archivos.
+
+### Rotación automática (fase 3, parte 1)
+
+- Orden del armador P1 → P6 → P5 → P4 → P3 → P2 → P1, un giro por cada side-out
+  ganado por el equipo scouteado (`rotar()`, `rotacionEn()`).
+- Al abrir cada set: «¿Quién saca?» (1/2) y luego «¿Dónde parte el armador?» (1–6).
+- Corrección con los botones P1–P6: fija la rotación desde el rally vigente y sigue
+  rotando sola desde ahí. Solo se guarda si difiere de lo automático.
+- Solo se lleva la rotación del equipo scouteado (decisión de Martín).
+- Pendiente de la fase 3: plantel por número y nombres.
 
 **Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.
