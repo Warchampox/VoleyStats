@@ -15,7 +15,7 @@ Hecho, según el brief «Pantalla de captura» (dirección A · Cabina):
   (zona de ataque, dirección, zona de destino). Vista Rally / Set.
 - Guardado en localStorage (`voleystats`, con `version` y función `migrar()`),
   preferencias en `voleystats:prefs`. Deshacer con Ctrl/Cmd+Z (en memoria, hasta 300 pasos).
-- Diálogo propio de partido: crear, editar nombres y fecha, abrir otro partido guardado.
+- Diálogo propio de partido: crear y editar nombres y fecha (clic en el nombre del partido).
 
 Decisiones tomadas en esta sesión (con Martín):
 
@@ -64,5 +64,11 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   rotando sola desde ahí. Solo se guarda si difiere de lo automático.
 - Solo se lleva la rotación del equipo scouteado (decisión de Martín).
 - Pendiente de la fase 3: plantel por número y nombres.
+
+### Menú de partidos (pedido por Martín)
+
+- Botón «Partidos» en el header: lista de partidos guardados en el navegador
+  (fecha, equipo scouteado, sets, rallies), con Abrir, Partido nuevo y Eliminar
+  (con confirmación propia; borra el historial de deshacer para no revivirlo).
 
 **Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.

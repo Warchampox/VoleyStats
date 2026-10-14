@@ -1473,11 +1473,6 @@ function dialogoPartido({ nuevo, cancelable }) {
   const datos = nuevo
     ? { propio: 'Propio', rival: 'Rival', fecha: hoyIso(), scouteado: 'rival' }
     : { propio: p.equipos.propio, rival: p.equipos.rival, fecha: p.fecha, scouteado: p.scouteado };
-  const otros = Object.values(almacen.partidos).filter((x) => !p || x.id !== p.id);
-  const selectorOtros = !nuevo && otros.length
-    ? `<hr><label><span class="etiqueta">Abrir otro partido guardado</span><select class="campo" id="d-otro"><option value="">—</option>${
-      otros.map((x) => `<option value="${x.id}">${esc(x.equipos.rival)} vs ${esc(x.equipos.propio)} · ${esc(fmtFecha(x.fecha))}</option>`).join('')}</select></label>`
-    : '';
   abrirModal(
     `<h2>${nuevo ? 'Partido nuevo' : 'Datos del partido'}</h2>` +
     `<form id="form-partido" style="display:flex;flex-direction:column;gap:14px">` +
@@ -1492,9 +1487,7 @@ function dialogoPartido({ nuevo, cancelable }) {
       ? `<select class="campo" id="d-scout"><option value="rival">Rival</option><option value="propio">Propio</option></select>`
       : `<input class="campo" value="${esc(nombre(datos.scouteado))}" disabled>`) +
     `</label></div>` +
-    selectorOtros +
     `<div class="acciones">` +
-    (!nuevo ? `<button type="button" class="btn izq" id="d-nuevo">Partido nuevo…</button>` : '') +
     (cancelable ? `<button type="button" class="btn" id="d-cancelar">Cancelar</button>` : '') +
     `<button type="submit" class="btn principal">${nuevo ? 'Crear partido' : 'Guardar'}</button>` +
     `</div></form>`,
@@ -1502,22 +1495,6 @@ function dialogoPartido({ nuevo, cancelable }) {
   );
 
   if (cancelable) $('d-cancelar').addEventListener('click', cerrarModal);
-  if (!nuevo) {
-    $('d-nuevo').addEventListener('click', async () => {
-      const ok = await confirmar({
-        titulo: '¿Empezar un partido nuevo?',
-        texto: 'El partido actual queda guardado en este navegador y puedes volver a abrirlo desde «Datos del partido».',
-        aceptar: 'Empezar partido nuevo',
-      });
-      if (ok) dialogoPartido({ nuevo: true, cancelable: true });
-    });
-    const sel = $('d-otro');
-    if (sel) sel.addEventListener('change', () => {
-      if (!sel.value) return;
-      cambiarPartido(sel.value);
-      cerrarModal();
-    });
-  }
 
   $('form-partido').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -1537,6 +1514,73 @@ function dialogoPartido({ nuevo, cancelable }) {
     }
     cerrarModal();
   });
+}
+
+// ---------- Menú de partidos ----------
+
+function resumenPartido(x) {
+  const g = setsGanados(x);
+  const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
+  return `Scouteando ${nombre(x.scouteado, x)} · sets ${g[0]}–${g[1]} · ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
+}
+
+function dialogoPartidos() {
+  const lista = Object.values(almacen.partidos)
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.creado || '').localeCompare(a.creado || ''));
+  const filas = lista.map((x) => {
+    const actual = x.id === almacen.actual;
+    return `<div class="partido-fila${actual ? ' actual' : ''}">` +
+      `<div class="partido-datos"><b>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))}</b>` +
+      `<span class="tenue">${esc(fmtFecha(x.fecha))} · ${esc(resumenPartido(x))}</span></div>` +
+      (actual ? '<span class="etiqueta">Abierto</span>' : `<button class="btn" data-abrir="${x.id}">Abrir</button>`) +
+      `<button class="btn" data-eliminar="${x.id}" title="Eliminar partido">Eliminar</button>` +
+      `</div>`;
+  }).join('');
+  abrirModal(
+    `<h2>Partidos</h2>` +
+    `<p>Guardados en este navegador.</p>` +
+    `<div class="partidos-lista">${filas || '<div class="vacio">Todavía no hay partidos.</div>'}</div>` +
+    `<div class="acciones"><button class="btn izq principal" id="d-crear">Partido nuevo</button>` +
+    (partido() ? '<button class="btn" id="d-cerrar">Cerrar</button>' : '') + `</div>`,
+    !!partido(),
+  );
+  if (partido()) $('d-cerrar').addEventListener('click', cerrarModal);
+  $('d-crear').addEventListener('click', () => dialogoPartido({ nuevo: true, cancelable: !!partido() }));
+  $('modal').querySelectorAll('[data-abrir]').forEach((b) => b.addEventListener('click', () => {
+    cambiarPartido(b.dataset.abrir);
+    cerrarModal();
+  }));
+  $('modal').querySelectorAll('[data-eliminar]').forEach((b) => b.addEventListener('click', async () => {
+    const x = almacen.partidos[b.dataset.eliminar];
+    const ok = await confirmar({
+      titulo: '¿Eliminar este partido?',
+      texto: `${nombre('rival', x)} vs ${nombre('propio', x)} · ${fmtFecha(x.fecha)}. Se borran todas sus jugadas de este navegador y no se puede deshacer.`,
+      aceptar: 'Eliminar',
+    });
+    if (ok) eliminarPartido(x.id);
+    dialogoPartidos();
+  }));
+}
+
+function eliminarPartido(id) {
+  delete almacen.partidos[id];
+  historial.length = 0; // deshacer no debe revivir un partido eliminado
+  if (almacen.actual === id) {
+    const resto = Object.keys(almacen.partidos);
+    if (resto.length) {
+      cambiarPartido(resto[0]);
+    } else {
+      almacen.actual = null;
+      Video.soltarLocal();
+      if (Video.yt && Video.ytListo) { Video.yt.stopVideo(); Video.yt.getIframe().hidden = true; }
+      Video.fuente = null;
+      pendiente = nuevoPendiente();
+      guardar();
+      render();
+    }
+  } else {
+    guardar();
+  }
 }
 
 function cambiarPartido(id) {
@@ -1592,6 +1636,7 @@ function cargarVideoArchivo(archivo) {
 
 function conectarEventos() {
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
+  $('btn-partidos').addEventListener('click', dialogoPartidos);
 
   $('form-youtube').addEventListener('submit', (ev) => {
     ev.preventDefault();

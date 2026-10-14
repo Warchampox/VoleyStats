@@ -414,3 +414,13 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
 .dialogo .acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .dialogo .acciones .izq { margin-right: auto; }
 .dialogo hr { border: 0; border-top: 1px solid var(--borde); margin: 2px 0; width: 100%; }
+
+.dialogo:has(.partidos-lista) { width: min(620px, 100%); }
+.partidos-lista { display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto; border: 1px solid var(--borde); border-radius: var(--radio-boton); }
+.partido-fila { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--borde); }
+.partido-fila:last-child { border-bottom: 0; }
+.partido-fila.actual { background: #1C2025; }
+.partido-datos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.partido-datos b { font-weight: 600; }
+.partido-datos .tenue { font-family: var(--mono); font-size: 11.5px; }
+.partido-fila .etiqueta { padding: 0 8px; }
