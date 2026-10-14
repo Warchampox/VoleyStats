@@ -52,4 +52,7 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   B = el equipo scouteado recibe balón libre (acción `recibeLibre`; la armada que
   sigue se clasifica como fase «libre»).
 
+- Caché: Pages sirve los archivos con `max-age=600`. index.html carga
+  `estilos.css?v=N` y `app.js?v=N`. **Subir N en cada publicación** que cambie esos archivos.
+
 **Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.
