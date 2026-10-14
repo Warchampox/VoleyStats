@@ -63,7 +63,7 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 - Corrección con los botones P1–P6: fija la rotación desde el rally vigente y sigue
   rotando sola desde ahí. Solo se guarda si difiere de lo automático.
 - Solo se lleva la rotación del equipo scouteado (decisión de Martín).
-- Pendiente de la fase 3: plantel por número y nombres.
+- Plantel: ver sección siguiente.
 
 ### Menú de partidos (pedido por Martín)
 
@@ -82,4 +82,16 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   Si el id ya existe: Reemplazar / Guardar como copia / Cancelar.
 - Pendiente opcional (fase 6): exportar CSV.
 
-**Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.
+### Plantel (fase 3, parte 2)
+
+- `partido.plantel = { propio: [], rival: [] }` con `{ num, nombre?, pos? }`. Posiciones
+  opcionales: armador, central, punta, opuesto, líbero. Los partidos viejos parten con
+  plantel vacío (`migrarPartido`).
+- Editor en el botón «Plantel» (pestaña por equipo; Enter agrega otra fila; valida
+  números 0–99 sin repetir). Al guardar se recuerda por nombre de equipo en
+  `voleystats:equipos` y se carga solo al crear un partido con ese nombre.
+- Fila «Jugador» bajo el panel de estado: un clic asigna `accion.jugador` a la última
+  recepción o ataque del rally en pantalla; otro clic en el mismo lo quita (deshacible).
+  Solo recepción y ataque llevan jugador (decisión de Martín).
+
+**Siguiente paso:** anotar un set real y ajustar las teclas; luego fase 5 (estadísticas y filtros).

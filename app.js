@@ -128,6 +128,18 @@ function otro(equipo) { return equipo === 'propio' ? 'rival' : 'propio'; }
 
 const CLAVE = 'voleystats';
 const CLAVE_PREFS = 'voleystats:prefs';
+const CLAVE_EQUIPOS = 'voleystats:equipos'; // planteles reutilizables por nombre de equipo
+
+const POSICIONES = {
+  armador: { nombre: 'Armador', corto: 'A' },
+  central: { nombre: 'Central', corto: 'C' },
+  punta: { nombre: 'Punta', corto: 'P' },
+  opuesto: { nombre: 'Opuesto', corto: 'O' },
+  libero: { nombre: 'Líbero', corto: 'L' },
+};
+
+// Acciones a las que se les puede asignar jugador
+const ACCIONES_CON_JUGADOR = ['recepcion', 'ataque'];
 const VERSION_DATOS = 1;
 
 let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
@@ -146,6 +158,8 @@ function migrar(datos) {
 
 function migrarPartido(p) {
   if (!p.version) p.version = 1;
+  // Plantel agregado después de la primera versión: los partidos viejos parten vacíos
+  if (!p.plantel) p.plantel = { propio: [], rival: [] };
   for (const st of p.sets) {
     if (!st.rotInicial) st.rotInicial = { propio: null, rival: null };
     if (!Array.isArray(st.correcciones)) st.correcciones = [];
@@ -192,6 +206,7 @@ function crearPartido({ propio, rival, fecha, scouteado }) {
     equipos: { propio, rival },
     scouteado,
     video: null,
+    plantel: { propio: [], rival: [] }, // [{ num, nombre, pos }]
     sets: [crearSet(1)],
   };
 }
@@ -818,6 +833,7 @@ function render() {
   renderListas();
   renderCargaVideo();
   renderControles();
+  renderJugadores();
 }
 
 function renderCabecera() {
@@ -1088,6 +1104,60 @@ function contenidoEstado(e) {
   return { tipo: '', titulo: '', contexto: '', teclas: [], cols: 'c2' };
 }
 
+// ---------- Plantel: fila de jugadores ----------
+
+function jugadoresDe(equipo, p = partido()) {
+  return ((p && p.plantel && p.plantel[equipo]) || []).slice().sort((a, b) => a.num - b.num);
+}
+
+function textoJugador(num, p = partido()) {
+  const j = p && jugadoresDe(p.scouteado, p).find((x) => x.num === num);
+  if (!j) return `#${num}`;
+  return [`#${num}`, j.nombre, j.pos && POSICIONES[j.pos].nombre].filter(Boolean).join(' · ');
+}
+
+// Última recepción o ataque del rally en pantalla: a ella se asigna el jugador
+function accionParaJugador() {
+  const p = partido();
+  if (!p) return null;
+  const r = rallyMostrado(setActual(p));
+  if (!r) return null;
+  for (let i = r.acciones.length - 1; i >= 0; i--) {
+    if (ACCIONES_CON_JUGADOR.includes(r.acciones[i].tipo)) return r.acciones[i];
+  }
+  return null;
+}
+
+function renderJugadores() {
+  const cont = $('jugadores');
+  const p = partido();
+  if (!p) { cont.innerHTML = ''; return; }
+  const lista = jugadoresDe(p.scouteado);
+  const accion = accionParaJugador();
+  const destino = accion ? (accion.tipo === 'ataque' ? 'último ataque' : 'última recepción') : 'sin recepción ni ataque';
+  const chips = lista.length
+    ? lista.map((j) =>
+      `<button class="jug-chip${accion && accion.jugador === j.num ? ' activo' : ''}" data-jug="${j.num}" ${accion ? '' : 'disabled'} title="${esc(textoJugador(j.num))}">` +
+      `${j.num}${j.pos ? `<small>${POSICIONES[j.pos].corto}</small>` : ''}</button>`).join('')
+    : `<span class="tenue">Sin plantel del ${esc(nombre(p.scouteado))}.</span>`;
+  cont.innerHTML =
+    `<span class="etiqueta">Jugador · ${destino}</span>` +
+    `<div class="jug-chips">${chips}<button class="jug-chip mas" id="jug-editar" title="Editar plantel">${lista.length ? '+' : 'Agregar'}</button></div>`;
+}
+
+function asignarJugador(num) {
+  const accion = accionParaJugador();
+  if (!accion) return;
+  const p = partido();
+  const r = rallyMostrado(setActual(p));
+  const i = r.acciones.indexOf(accion);
+  const quitar = accion.jugador === num;
+  mutar(quitar ? `Quitar #${num}` : `Jugador #${num}`, () => {
+    const a = r.acciones[i];
+    if (quitar) delete a.jugador; else a.jugador = num;
+  });
+}
+
 function renderEstado() {
   const e = estado();
   const celdas = celdasPasos(e);
@@ -1266,7 +1336,7 @@ function filaAccion(r, a) {
   const p = partido();
   switch (a.tipo) {
     case 'saque': tipo = 'Saque'; det = `<span style="font-family:var(--sans)">${esc(nombre(a.equipo))}</span>`; break;
-    case 'recepcion': tipo = 'Recepción'; det = `${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>`; break;
+    case 'recepcion': tipo = 'Recepción'; det = `${jugadorBadge(a)}${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>`; break;
     case 'recovery': tipo = 'Recovery'; det = `<span class="calc">${esc(nombre(p.scouteado))}</span>`; break;
     case 'recibeLibre': tipo = 'Libre'; det = '<span class="calc">recibe balón libre</span>'; break;
     case 'pasaLibre': tipo = 'Libre'; det = '<span class="calc">pasa al otro lado</span>'; break;
@@ -1284,12 +1354,16 @@ function filaAccion(r, a) {
       const i = r.acciones.indexOf(a);
       const arm = r.acciones[i - 1];
       const calc = textoAtaque(arm, a, false);
-      det = `<span>${a.golpe === 'remate' ? 'Remate' : GOLPES[a.golpe].corto}</span>` + (calc ? `<span class="calc">· ${esc(calc)}</span>` : '') +
+      det = jugadorBadge(a) + `<span>${a.golpe === 'remate' ? 'Remate' : GOLPES[a.golpe].corto}</span>` + (calc ? `<span class="calc">· ${esc(calc)}</span>` : '') +
         (a.resultado ? `${simboloMini(a.resultado)}<span>${RESULTADOS[a.resultado].nombre}</span>` : '<span class="calc">…</span>');
       break;
     }
   }
   return `<div class="fila fila-accion"><span class="t">${fmtTiempo(a.t)}</span><span>${tipo}</span><span class="detalle">${det}</span>${botonIr(a.t)}</div>`;
+}
+
+function jugadorBadge(a) {
+  return a.jugador != null ? `<span class="jug" title="${esc(textoJugador(a.jugador))}">${a.jugador}</span>` : '';
 }
 
 function resumenRally(r, p) {
@@ -1514,8 +1588,10 @@ function dialogoPartido({ nuevo, cancelable }) {
     const fecha = $('d-fecha').value || hoyIso();
     if (nuevo) {
       const np = crearPartido({ propio, rival, fecha, scouteado: $('d-scout').value });
+      const cargados = cargarPlantelesConocidos(np);
       almacen.partidos[np.id] = np;
       cambiarPartido(np.id);
+      if (cargados.length) avisar(`Plantel cargado: ${cargados.join(', ')}`);
     } else {
       p.equipos.propio = propio;
       p.equipos.rival = rival;
@@ -1611,6 +1687,122 @@ async function importarArchivo(archivo) {
   cambiarPartido(x.id);
   cerrarModal();
   avisar(`Partido importado: ${nombre('rival', x)} vs ${nombre('propio', x)}`);
+}
+
+// ---------- Plantel: equipos conocidos y editor ----------
+
+function leerEquiposConocidos() {
+  try { return JSON.parse(localStorage.getItem(CLAVE_EQUIPOS)) || {}; } catch (e) { return {}; }
+}
+
+function recordarPlantel(nombreEquipo, jugadores) {
+  if (!jugadores.length) return;
+  const conocidos = leerEquiposConocidos();
+  conocidos[slug(nombreEquipo)] = { nombre: nombreEquipo, jugadores };
+  try { localStorage.setItem(CLAVE_EQUIPOS, JSON.stringify(conocidos)); } catch (e) { /* no crítico */ }
+}
+
+// Al crear un partido, carga el plantel guardado de equipos con el mismo nombre
+function cargarPlantelesConocidos(p) {
+  const conocidos = leerEquiposConocidos();
+  const cargados = [];
+  for (const eq of ['propio', 'rival']) {
+    const c = conocidos[slug(nombre(eq, p))];
+    if (c && c.jugadores.length) {
+      p.plantel[eq] = c.jugadores.map((j) => ({ ...j }));
+      cargados.push(`${nombre(eq, p)} (${c.jugadores.length})`);
+    }
+  }
+  return cargados;
+}
+
+function dialogoPlantel() {
+  const p = partido();
+  if (!p) return;
+  const borrador = { propio: jugadoresDe('propio').map((j) => ({ ...j })), rival: jugadoresDe('rival').map((j) => ({ ...j })) };
+  let equipo = p.scouteado;
+
+  const opcionesPos = (sel) => `<option value="">—</option>` +
+    Object.entries(POSICIONES).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${v.nombre}</option>`).join('');
+
+  function leerFilas() {
+    borrador[equipo] = [...$('modal').querySelectorAll('.plantel-fila')].map((f) => ({
+      num: f.querySelector('.p-num').value.trim(),
+      nombre: f.querySelector('.p-nombre').value.trim(),
+      pos: f.querySelector('.p-pos').value,
+    }));
+  }
+
+  function pintar(enfocarUltimo = false) {
+    const filas = borrador[equipo].map((j, i) =>
+      `<div class="plantel-fila" data-i="${i}">` +
+      `<input class="campo p-num" type="number" min="0" max="99" inputmode="numeric" placeholder="Nº" value="${esc(j.num)}">` +
+      `<input class="campo p-nombre" type="text" placeholder="Nombre (opcional)" value="${esc(j.nombre || '')}">` +
+      `<select class="campo p-pos">${opcionesPos(j.pos)}</select>` +
+      `<button type="button" class="ir p-quitar" title="Quitar">✕</button></div>`).join('');
+    abrirModal(
+      `<h2>Plantel</h2>` +
+      `<div class="selector plantel-tabs">${['rival', 'propio'].map((eq) =>
+        `<button type="button" data-eq="${eq}" class="${eq === equipo ? 'activo' : ''}">${esc(nombre(eq))}${eq === p.scouteado ? ' · scouteado' : ''}</button>`).join('')}</div>` +
+      `<div class="plantel-lista">${filas || '<div class="vacio">Sin jugadores todavía.</div>'}</div>` +
+      `<button type="button" class="btn" id="p-agregar">+ Agregar jugador</button>` +
+      `<div class="carga-error" id="p-error"></div>` +
+      `<p class="tenue">El plantel se recuerda por nombre de equipo para los próximos partidos.</p>` +
+      `<div class="acciones"><button type="button" class="btn" id="p-cancelar">Cancelar</button><button type="button" class="btn principal" id="p-guardar">Guardar</button></div>`,
+      true,
+    );
+    const nums = $('modal').querySelectorAll('.p-num');
+    if (enfocarUltimo && nums.length) nums[nums.length - 1].focus();
+    else if (!nums.length) $('p-agregar').focus();
+
+    $('modal').querySelectorAll('[data-eq]').forEach((b) => b.addEventListener('click', () => {
+      leerFilas(); equipo = b.dataset.eq; pintar();
+    }));
+    $('modal').querySelectorAll('.p-quitar').forEach((b) => b.addEventListener('click', () => {
+      leerFilas(); borrador[equipo].splice(Number(b.closest('.plantel-fila').dataset.i), 1); pintar();
+    }));
+    $('p-agregar').addEventListener('click', () => {
+      leerFilas(); borrador[equipo].push({ num: '', nombre: '', pos: '' }); pintar(true);
+    });
+    // Enter en una fila agrega otra: cargar números rápido
+    $('modal').querySelectorAll('.plantel-fila input').forEach((inp) => inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); $('p-agregar').click(); }
+    }));
+    $('p-cancelar').addEventListener('click', cerrarModal);
+    $('p-guardar').addEventListener('click', guardarPlantel);
+  }
+
+  function limpiar(lista) {
+    const res = [];
+    for (const j of lista) {
+      if (j.num === '' || j.num == null) continue;
+      const num = Number(j.num);
+      if (!Number.isInteger(num) || num < 0 || num > 99) throw new Error(`«${j.num}» no es un número de camiseta válido (0 a 99).`);
+      if (res.some((x) => x.num === num)) throw new Error(`El número ${num} está repetido.`);
+      const jug = { num };
+      if (j.nombre) jug.nombre = j.nombre;
+      if (j.pos) jug.pos = j.pos;
+      res.push(jug);
+    }
+    return res.sort((a, b) => a.num - b.num);
+  }
+
+  function guardarPlantel() {
+    leerFilas();
+    let limpio;
+    try {
+      limpio = { propio: limpiar(borrador.propio), rival: limpiar(borrador.rival) };
+    } catch (e) {
+      $('p-error').textContent = e.message;
+      return;
+    }
+    mutar('Plantel', (pp) => { pp.plantel = limpio; });
+    recordarPlantel(nombre('propio'), limpio.propio);
+    recordarPlantel(nombre('rival'), limpio.rival);
+    cerrarModal();
+  }
+
+  pintar();
 }
 
 // ---------- Menú de partidos ----------
@@ -1738,6 +1930,12 @@ function cargarVideoArchivo(archivo) {
 function conectarEventos() {
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-partidos').addEventListener('click', dialogoPartidos);
+  $('btn-plantel').addEventListener('click', dialogoPlantel);
+  $('jugadores').addEventListener('click', (ev) => {
+    if (ev.target.closest('#jug-editar')) { dialogoPlantel(); return; }
+    const b = ev.target.closest('[data-jug]');
+    if (b) asignarJugador(Number(b.dataset.jug));
+  });
   $('btn-exportar').addEventListener('click', () => { if (partido()) exportarPartido(almacen.actual); });
   $('input-importar').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
