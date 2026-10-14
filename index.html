@@ -3,14 +3,126 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Scouting Vóley</title>
+  <title>VoleyStats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="estilos.css">
 </head>
 <body>
-  <main class="placeholder">
-    <h1>Scouting Vóley</h1>
-    <p>Nombre provisorio · En construcción</p>
+  <header class="cabecera">
+    <div class="marca">VoleyStats</div>
+    <div class="separador"></div>
+    <button class="partido-info" id="partido-info" title="Datos del partido"></button>
+    <div class="scouteando"><span class="etiqueta">Scouteando</span><span id="scouteando"></span></div>
+    <div class="relleno"></div>
+    <div class="guardado" id="guardado"></div>
+    <button class="btn" id="btn-plantel" disabled title="Llega en la fase 3">Plantel</button>
+  </header>
+
+  <main class="cuerpo">
+    <section class="col-izq">
+      <div class="video" id="video">
+        <div id="yt-host"></div>
+        <video id="video-local" playsinline preload="auto" hidden></video>
+        <div class="video-capa" id="video-capa"></div>
+        <button class="chip-fuente" id="chip-fuente" title="Cambiar video" hidden></button>
+        <div class="badge-pausado" id="badge-pausado">PAUSADO</div>
+        <div class="tiempo-grande" id="tiempo-grande">0:00,0</div>
+
+        <div class="video-carga" id="video-carga">
+          <div class="carga-caja">
+            <h2 id="carga-titulo">Carga el video del partido</h2>
+            <p id="carga-texto">Pega el link de YouTube o abre el archivo descargado. El archivo no se sube a ningún lado.</p>
+            <form class="carga-fila" id="form-youtube">
+              <input class="campo" id="input-youtube" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+              <button class="btn principal" type="submit">Cargar</button>
+            </form>
+            <div class="carga-o">o</div>
+            <div class="carga-fila">
+              <button class="btn" type="button" id="btn-archivo">Abrir archivo local…</button>
+              <input type="file" id="input-archivo" accept="video/*" hidden>
+              <button class="btn" type="button" id="btn-cancelar-carga" hidden>Cancelar</button>
+            </div>
+            <div class="carga-error" id="carga-error"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controles">
+        <button class="btn" id="btn-atras">« −3 s <kbd>←</kbd></button>
+        <button class="btn principal" id="btn-play"><span id="play-texto">▶ Reproducir</span> <kbd>Espacio</kbd></button>
+        <button class="btn" id="btn-adelante">+3 s » <kbd>→</kbd></button>
+        <div class="grupo" id="grupo-cuadro" title="Cuadro a cuadro (solo archivo local)">
+          <button id="btn-cuadro-atras" title="Cuadro anterior">‹ Cuadro <kbd>,</kbd></button>
+          <button id="btn-cuadro-adelante" title="Cuadro siguiente"><kbd>.</kbd> ›</button>
+        </div>
+        <div class="grupo" id="grupo-velocidad"></div>
+        <label class="casilla"><input type="checkbox" id="pausar-al-marcar"> Pausar al marcar</label>
+      </div>
+
+      <div class="linea-tiempo">
+        <span id="lt-actual">0:00,0</span>
+        <div class="barra" id="barra">
+          <div class="barra-fondo"></div>
+          <div class="barra-avance" id="barra-avance"></div>
+          <div class="barra-set" id="barra-set" hidden title="Inicio del set"></div>
+          <div class="barra-cabezal" id="barra-cabezal"></div>
+        </div>
+        <span id="lt-duracion">0:00</span>
+      </div>
+
+      <div class="listas">
+        <div class="panel">
+          <div class="panel-cab">
+            <span class="etiqueta fuerte" id="rally-titulo">Rally · acciones</span>
+            <span class="etiqueta" id="rally-info"></span>
+          </div>
+          <div class="lista" id="rally-acciones"></div>
+          <div class="pie-rally" id="rally-pie" hidden></div>
+        </div>
+        <div class="panel">
+          <div class="panel-cab">
+            <span class="etiqueta fuerte" id="anteriores-titulo">Rallies anteriores</span>
+            <span class="etiqueta" id="anteriores-cuenta"></span>
+          </div>
+          <div class="lista" id="rallies-anteriores"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="col-der">
+      <div class="panel marcador">
+        <div class="marcador-izq">
+          <div class="tanteo" id="tanteo"></div>
+          <div class="sub-marcador" id="sub-marcador"></div>
+        </div>
+        <div class="marcador-der">
+          <div class="rot-cab"><span class="etiqueta" id="rot-titulo">Armador</span><span class="nota">clic corrige</span></div>
+          <div class="chips" id="chips-rotacion"></div>
+        </div>
+      </div>
+
+      <div class="panel estado" id="estado"></div>
+
+      <div class="panel cancha-panel">
+        <div class="panel-cab">
+          <span class="etiqueta fuerte" id="cancha-titulo">Cancha</span>
+          <div class="selector" id="selector-vista">
+            <button data-vista="rally" class="activo">Rally</button>
+            <button data-vista="set">Set</button>
+          </div>
+        </div>
+        <div class="cancha-cont">
+          <svg id="cancha" viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="leyenda" id="leyenda"></div>
+      </div>
+    </section>
   </main>
+
+  <div class="modal" id="modal" hidden></div>
+
   <script src="app.js"></script>
 </body>
 </html>
