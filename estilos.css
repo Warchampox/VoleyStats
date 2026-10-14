@@ -534,3 +534,12 @@ body.modo-stats .solo-captura { display: none !important; }
   background: var(--panel-estado); border: 1px solid var(--borde-fuerte); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
+
+/* ---------- Pantallas de menos de 1440 px ----------
+   La fila de controles del video no cabe: se ocultan las teclas impresas en los
+   botones (siguen en el panel de estado) para que 1,5× y 2× no queden tapados. */
+
+@media (max-width: 1420px) {
+  .controles kbd { display: none; }
+  .controles .grupo button { padding: 0 7px; }
+}

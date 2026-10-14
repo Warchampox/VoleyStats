@@ -118,5 +118,17 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 - Teclas del paso de armada y de rotación inicial en 4 columnas: el panel de estado queda en ~222 px.
 - A 1440×812 (la ventana de Martín) la cancha queda en su tamaño completo (512×302).
 
+### Auditoría antes del primer partido real (2026-10-14)
+
+- Probado en Chromium sin interfaz: un partido completo de 3 sets (129 rallies) con
+  teclado y clics, archivo local, YouTube simulado, deshacer, recarga, exportar/importar
+  y las 4 vistas de estadísticas. Marcador, saque y rotación coinciden con un cálculo
+  independiente en todos los rallies. Sin errores de consola.
+- Corregido: Ctrl+Z no funcionaba después de recargar la pestaña (el historial era solo
+  en memoria). Ahora se guarda en sessionStorage al salir (`pagehide`, últimos 60 pasos).
+- Corregido: bajo 1420 px de ancho los botones 1,5× y 2× quedaban tapados por «Pausar al
+  marcar». Se ocultan las teclas impresas en los botones de esa fila.
+- `?v=13`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

@@ -564,6 +564,26 @@ function mutar(etiqueta, fn) {
   render();
 }
 
+// El historial vive en memoria; al recargar la pestaña se conserva en
+// sessionStorage para que Ctrl+Z siga funcionando después de un F5.
+const CLAVE_HISTORIAL = 'voleystats:historial';
+const MAX_HISTORIAL_SESION = 60;
+
+function guardarHistorialSesion() {
+  try {
+    sessionStorage.setItem(CLAVE_HISTORIAL, JSON.stringify(historial.slice(-MAX_HISTORIAL_SESION)));
+  } catch (e) { /* sin espacio: se pierde solo el deshacer tras recargar */ }
+}
+
+function restaurarHistorialSesion() {
+  try {
+    const crudo = sessionStorage.getItem(CLAVE_HISTORIAL);
+    sessionStorage.removeItem(CLAVE_HISTORIAL);
+    const lista = crudo ? JSON.parse(crudo) : [];
+    for (const h of lista) if (h && almacen.partidos[h.id]) historial.push(h);
+  } catch (e) { /* historial ilegible: se parte vacío */ }
+}
+
 function deshacer() {
   const h = historial.pop();
   if (!h) { avisar('No hay nada que deshacer'); return; }
@@ -2510,6 +2530,8 @@ function conectarEventos() {
 function iniciar() {
   Video.el = $('video-local');
   Video.vel = VELOCIDADES.includes(prefs.velocidad) ? prefs.velocidad : 1;
+  restaurarHistorialSesion();
+  window.addEventListener('pagehide', guardarHistorialSesion);
   conectarEventos();
   renderLeyenda();
   aplicarLeyenda();
