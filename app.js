@@ -549,7 +549,8 @@ const ui = {
 // Selecciones en curso que todavía no son una acción guardada.
 let pendiente = nuevoPendiente();
 function nuevoPendiente() {
-  return { armada: null, golpe: 'remate', cerrar: false, elegirSaque: null, elegirRotacion: null };
+  // puntoPara: punto directo pendiente de saber quién saca (primer rally del set)
+  return { armada: null, golpe: 'remate', cerrar: false, elegirSaque: null, elegirRotacion: null, puntoPara: null };
 }
 
 const historial = [];
@@ -614,8 +615,8 @@ function estado() {
   if (partidoTerminado(p)) return { modo: 'partidoTerminado', p, set };
   if (set.final) return { modo: 'setTerminado', p, set };
   const r = rallyAbierto(set);
-  if (!r) return { modo: 'esperando', p, set };
   if (pendiente.cerrar) return { modo: 'cerrar', p, set, r };
+  if (!r) return { modo: 'esperando', p, set };
   const ultima = r.acciones[r.acciones.length - 1];
   let modo;
   if (ultima.tipo === 'saque') modo = r.saca === p.scouteado ? 'armadaTipo' : 'recepcion';
@@ -636,6 +637,34 @@ function alMarcar(set) {
 }
 
 function tiempoActual() { return redondear(Video.tiempo(), 1); }
+
+// Abre el rally y, si había un punto directo pendiente, lo cierra de inmediato
+function abrirRallyPendiente(set, saca, t) {
+  const para = pendiente.puntoPara;
+  abrirRally(set, saca, t);
+  if (para) cerrarRally(set, set.rallies[set.rallies.length - 1], para);
+}
+
+// Punto sin jugada: un rally con solo el saque y su ganador. Marcador, saque
+// y rotación se siguen derivando de los rallies como siempre.
+function puntoDirecto(gana) {
+  const e = estado();
+  const { modo, set, r } = e;
+  if (modo === 'sinPartido' || ui.modo === 'stats') return;
+  if (['elegirSaque', 'elegirRotacion'].includes(modo)) { avisar('Primero termina de abrir el set'); return; }
+  if (modo === 'setTerminado' || modo === 'partidoTerminado') { avisar('El set ya terminó: Enter abre el siguiente'); return; }
+  const t = tiempoActual();
+  if (r) {
+    mutar(`Punto ${nombre(gana)}`, () => cerrarRally(set, r, gana));
+  } else if (!set.rallies.length && !set.primerSaque) {
+    mutar(`Punto ${nombre(gana)}`, () => { pendiente.elegirSaque = { t }; pendiente.puntoPara = gana; });
+  } else {
+    mutar(`Punto ${nombre(gana)}`, () => {
+      abrirRally(set, sacaSiguiente(set), t);
+      cerrarRally(set, set.rallies[set.rallies.length - 1], gana);
+    });
+  }
+}
 
 function abrirRally(set, saca, t) {
   set.rallies.push({
@@ -686,7 +715,7 @@ function teclaCaptura(k) {
         const t = pendiente.elegirSaque.t;
         if (set.rotInicial[p.scouteado]) {
           set.primerSaque = saca;
-          abrirRally(set, saca, t);
+          abrirRallyPendiente(set, saca, t);
         } else {
           pendiente.elegirSaque = null;
           pendiente.elegirRotacion = { t, saca };
@@ -694,7 +723,7 @@ function teclaCaptura(k) {
       });
       return true;
     }
-    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirSaque = null; }); return true; }
+    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirSaque = null; pendiente.puntoPara = null; }); return true; }
     return false;
   }
 
@@ -705,26 +734,32 @@ function teclaCaptura(k) {
         const { t, saca } = pendiente.elegirRotacion;
         set.rotInicial[p.scouteado] = rot;
         set.primerSaque = saca;
-        abrirRally(set, saca, t);
+        abrirRallyPendiente(set, saca, t);
       });
       return true;
     }
-    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirRotacion = null; }); return true; }
+    if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.elegirRotacion = null; pendiente.puntoPara = null; }); return true; }
     return false;
   }
 
-  if (!r) return false;
+  if (modo === 'esperando' && k === TECLAS.cerrarSinAtaque) {
+    mutar('Punto sin jugada', () => { pendiente.cerrar = true; });
+    return true;
+  }
 
   if (modo === 'cerrar') {
     if (TECLAS.ganador[k]) {
       const gana = TECLAS.ganador[k];
-      alMarcar(set);
-      mutar(`Gana ${nombre(gana)}`, () => cerrarRally(set, r, gana));
+      if (r) alMarcar(set);
+      pendiente.cerrar = false;
+      puntoDirecto(gana);
       return true;
     }
     if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.cerrar = false; }); return true; }
     return false;
   }
+
+  if (!r) return false;
 
   if (k === TECLAS.cerrarSinAtaque && ['recepcion', 'armadaTipo', 'armadaClic'].includes(modo)) {
     alMarcar(set);
@@ -885,7 +920,7 @@ function renderGuardado() {
 
 function renderMarcador() {
   const p = partido();
-  if (!p) { $('tanteo').innerHTML = ''; $('sub-marcador').textContent = ''; $('chips-rotacion').innerHTML = ''; return; }
+  if (!p) { $('tanteo').innerHTML = ''; $('sub-marcador').textContent = ''; $('chips-rotacion').innerHTML = ''; $('punto-rapido').innerHTML = ''; return; }
   const set = setActual(p);
   const r = rallyAbierto(set);
   const m = r ? r.marcador : marcadorTras(set);
@@ -893,12 +928,14 @@ function renderMarcador() {
   const g = setsGanados(p);
   const punto = (eq) => `<span class="punto-saque${saca === eq ? '' : ' oculto'}"></span>`;
   $('tanteo').innerHTML =
-    `<span class="equipo">${esc(nombre('propio'))}</span>` +
+    `<span class="equipo" title="${esc(nombre('propio'))}">${esc(nombre('propio'))}</span>` +
     `<span class="num">${m[0]}</span><span class="guion">–</span><span class="num">${m[1]}</span>` +
-    `<span class="equipo">${esc(nombre('rival'))} ${punto('rival')}</span>`;
+    `<span class="equipo" title="${esc(nombre('rival'))}">${esc(nombre('rival'))} ${punto('rival')}</span>`;
   if (saca === 'propio') $('tanteo').firstElementChild.insertAdjacentHTML('beforeend', ' ' + punto('propio'));
   $('sub-marcador').textContent =
     `Set ${set.numero} · sets ${g[0]}–${g[1]}` + (saca ? ` · saca ${nombre(saca)}` : '');
+  $('punto-rapido').innerHTML = ['propio', 'rival'].map((eq) =>
+    `<button class="btn chico" data-punto="${eq}" title="Sumar un punto sin registrar la jugada">+1 ${esc(nombre(eq))}</button>`).join('');
 
   $('rot-titulo').textContent = `Armador ${nombre(p.scouteado)}`;
   const rot = rotacionEn(set, indiceRallyVigente(set), p.scouteado);
@@ -1002,7 +1039,7 @@ function contenidoEstado(e) {
         return {
           tipo: 'tecla', titulo: `Listo para el set ${set.numero}`,
           contexto: `Enter marca el saque del primer rally en el segundo actual. Antes, ${rot ? 'revisa: ' + rotTxt : rotTxt}.`,
-          teclas: [teclaItem('Enter', 'Nuevo rally', '', true), ...teclasVideo], cols: 'c2',
+          teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c3',
         };
       }
       const n = set.rallies.length;
@@ -1010,7 +1047,7 @@ function contenidoEstado(e) {
       return {
         tipo: 'tecla', titulo: `Rally ${n} cerrado · punto ${nombre(ultimo.gana)}`,
         contexto: `${giro}Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
-        teclas: [teclaItem('Enter', 'Nuevo rally', '', true), ...teclasVideo], cols: 'c2',
+        teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c3',
       };
     }
 
@@ -1052,8 +1089,8 @@ function contenidoEstado(e) {
 
     case 'cerrar':
       return {
-        tipo: 'tecla', titulo: '¿Quién gana el rally?',
-        contexto: `Cierra el rally sin registrar otro ataque del ${scoutNom}.`,
+        tipo: 'tecla', titulo: e.r ? '¿Quién gana el rally?' : '¿Quién gana el punto?',
+        contexto: e.r ? `Cierra el rally sin registrar otro ataque del ${scoutNom}.` : 'Suma el punto sin registrar la jugada.',
         teclas: [teclaItem('1', nombre('propio'), '', true), teclaItem('2', nombre('rival'), '', true), teclaItem('Esc', 'Cancelar')], cols: 'c3',
       };
 
@@ -1425,6 +1462,8 @@ function resumenRally(r, p) {
     const z = zonaAtaque(ult.armada);
     s += muestra(ult.armada.armada) + `<span>${ARMADAS[ult.armada.armada].corto}${z ? ' ' + z : ''}` +
       (ult.ataque.resultado ? ` · ${RESULTADOS[ult.ataque.resultado].nombre}` : '') + '</span>';
+  } else if (r.acciones.length === 1) {
+    s += '<span class="tenue">sin jugada</span>';
   } else if (rec && rec.calif === '=') {
     s += '<span class="tenue">error de recepción</span>';
   } else {
@@ -2502,6 +2541,10 @@ function conectarEventos() {
     if (b) Video.saltar(Number(b.dataset.t));
   });
 
+  $('punto-rapido').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-punto]');
+    if (b) puntoDirecto(b.dataset.punto);
+  });
   $('chips-rotacion').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-rot]');
     if (b) corregirRotacion(Number(b.dataset.rot));

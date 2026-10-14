@@ -130,5 +130,16 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   marcar». Se ocultan las teclas impresas en los botones de esa fila.
 - `?v=13`.
 
+### Punto sin jugada (pedido por Martín)
+
+- Botones «+1 <equipo>» en el marcador y tecla G con el rally cerrado (luego 1 Propio /
+  2 Rival). Con un rally abierto, G sigue cerrándolo sin ataque como antes.
+- Se guarda como un rally con solo el saque y su ganador (`puntoDirecto()`), así marcador,
+  saque y rotación siguen derivándose; se deshace con Ctrl+Z. En la lista aparece «sin jugada».
+- Si es el primer punto del set, primero pide quién saca y la rotación inicial
+  (`pendiente.puntoPara`).
+- Marcador: nombres largos de equipo en una línea con «…».
+- `?v=14`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

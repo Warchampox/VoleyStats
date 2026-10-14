@@ -320,8 +320,8 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
 
 /* ---------- Marcador ---------- */
 
-.marcador { display: flex; height: 92px; flex: none; }
-.marcador-izq { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 20px; gap: 4px; border-right: 1px solid var(--borde); }
+.marcador { display: flex; min-height: 92px; flex: none; }
+.marcador-izq { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 8px 16px; gap: 3px; border-right: 1px solid var(--borde); }
 .tanteo { display: flex; align-items: baseline; gap: 12px; }
 .tanteo .equipo { font-size: 15px; color: var(--texto-2); display: inline-flex; align-items: center; gap: 6px; }
 .tanteo .num { font-family: var(--mono); font-size: 28px; font-weight: 600; }
@@ -543,3 +543,13 @@ body.modo-stats .solo-captura { display: none !important; }
   .controles kbd { display: none; }
   .controles .grupo button { padding: 0 7px; }
 }
+
+.punto-rapido { display: flex; gap: 6px; margin-top: 3px; }
+.punto-rapido .btn { height: 22px; padding: 0 7px; font-size: 11.5px; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 20px; }
+
+/* Nombres largos de equipo: una sola línea, cortados con «…» */
+.tanteo { min-width: 0; }
+.tanteo .equipo { display: block; flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tanteo .num, .tanteo .guion { flex: none; }
+.sub-marcador { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rot-cab .nota { flex: none; }
