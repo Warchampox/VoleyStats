@@ -71,4 +71,15 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   (fecha, equipo scouteado, sets, rallies), con Abrir, Partido nuevo y Eliminar
   (con confirmación propia; borra el historial de deshacer para no revivirlo).
 
+### Exportar e importar JSON (fase 4)
+
+- «Exportar JSON» en el header (partido abierto) y «Exportar» por fila en el menú Partidos.
+  Archivo `voleystats-<rival>-vs-<propio>-<fecha>.json` con
+  `{ formato: "voleystats-partido", version, exportado, partido }`.
+  Incluye el link de YouTube o el nombre del archivo local; el video nunca viaja.
+- «Importar JSON…» en el menú Partidos. Acepta el archivo exportado o un partido suelto,
+  valida la estructura y pasa por `migrarPartido()`. Rechaza archivos de una versión más nueva.
+  Si el id ya existe: Reemplazar / Guardar como copia / Cancelar.
+- Pendiente opcional (fase 6): exportar CSV.
+
 **Siguiente paso:** paso 6 del brief: anotar un set real y ajustar las teclas.

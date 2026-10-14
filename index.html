@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="estilos.css?v=5">
+  <link rel="stylesheet" href="estilos.css?v=6">
 </head>
 <body>
   <header class="cabecera">
@@ -19,6 +19,8 @@
     <div class="guardado" id="guardado"></div>
     <button class="btn" id="btn-partidos">Partidos</button>
     <button class="btn" id="btn-plantel" disabled title="Llega en la fase 3">Plantel</button>
+    <button class="btn" id="btn-exportar" title="Descargar el partido abierto como archivo JSON">Exportar JSON</button>
+    <input type="file" id="input-importar" accept=".json,application/json" hidden>
   </header>
 
   <main class="cuerpo">
@@ -124,6 +126,6 @@
 
   <div class="modal" id="modal" hidden></div>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

@@ -133,14 +133,25 @@ const VERSION_DATOS = 1;
 let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
 let prefs = { pausarAlMarcar: true, velocidad: 1 };
 
-// Cada cambio futuro al formato agrega aquí un paso de migración
+// Cada cambio futuro al formato agrega en migrarPartido un paso
 // (version N → N+1). Se usa al cargar localStorage y al importar archivos.
 function migrar(datos) {
   if (!datos || typeof datos !== 'object' || !datos.partidos) {
     return { version: VERSION_DATOS, actual: null, partidos: {} };
   }
-  if (!datos.version) datos.version = 1;
+  for (const id of Object.keys(datos.partidos)) datos.partidos[id] = migrarPartido(datos.partidos[id]);
+  datos.version = VERSION_DATOS;
   return datos;
+}
+
+function migrarPartido(p) {
+  if (!p.version) p.version = 1;
+  for (const st of p.sets) {
+    if (!st.rotInicial) st.rotInicial = { propio: null, rival: null };
+    if (!Array.isArray(st.correcciones)) st.correcciones = [];
+  }
+  // if (p.version === 1) { ...; p.version = 2; }
+  return p;
 }
 
 function cargarAlmacen() {
@@ -1454,11 +1465,11 @@ function cerrarModal() {
   $('modal').innerHTML = '';
 }
 
-function confirmar({ titulo, texto, aceptar = 'Aceptar' }) {
+function confirmar({ titulo, texto, aceptar = 'Aceptar', soloAceptar = false }) {
   return new Promise((resolver) => {
     abrirModal(
       `<h2>${esc(titulo)}</h2><p>${esc(texto)}</p>` +
-      `<div class="acciones"><button class="btn" data-r="no">Cancelar</button><button class="btn principal" data-r="si">${esc(aceptar)}</button></div>`,
+      `<div class="acciones">${soloAceptar ? '' : '<button class="btn" data-r="no">Cancelar</button>'}<button class="btn principal" data-r="si">${esc(aceptar)}</button></div>`,
       true,
     );
     $('modal').querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => {
@@ -1516,6 +1527,92 @@ function dialogoPartido({ nuevo, cancelable }) {
   });
 }
 
+// ---------- Exportar e importar JSON ----------
+
+const FORMATO_ARCHIVO = 'voleystats-partido';
+
+function slug(t) {
+  return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function exportarPartido(id) {
+  const x = almacen.partidos[id];
+  if (!x) return;
+  const archivo = {
+    formato: FORMATO_ARCHIVO,
+    version: VERSION_DATOS,
+    exportado: new Date().toISOString(),
+    partido: x,
+  };
+  const blob = new Blob([JSON.stringify(archivo, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `voleystats-${slug(nombre('rival', x))}-vs-${slug(nombre('propio', x))}-${x.fecha || 'sin-fecha'}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Devuelve el partido del archivo o lanza un Error con un mensaje para Martín.
+function leerArchivoPartido(texto) {
+  let datos;
+  try { datos = JSON.parse(texto); } catch (e) { throw new Error('El archivo no es un JSON válido.'); }
+  // Se aceptan el archivo exportado o un partido suelto
+  const x = datos && datos.formato === FORMATO_ARCHIVO ? datos.partido : datos;
+  const valido = x && typeof x === 'object' && x.id && x.equipos && Array.isArray(x.sets) &&
+    ['rival', 'propio'].includes(x.scouteado) &&
+    x.sets.every((st) => Array.isArray(st.rallies) && st.rallies.every((r) => Array.isArray(r.acciones)));
+  if (!valido) throw new Error('El archivo no parece un partido de VoleyStats.');
+  if ((x.version || 1) > VERSION_DATOS) {
+    throw new Error('El archivo viene de una versión más nueva de VoleyStats. Recarga la página e intenta de nuevo.');
+  }
+  return migrarPartido(x);
+}
+
+function elegirImportacion(x) {
+  return new Promise((resolver) => {
+    const existente = almacen.partidos[x.id];
+    abrirModal(
+      `<h2>Este partido ya está guardado</h2>` +
+      `<p>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))} · ${esc(fmtFecha(x.fecha))}</p>` +
+      `<p class="tenue">Guardado: ${esc(resumenPartido(existente))}<br>Archivo: ${esc(resumenPartido(x))}</p>` +
+      `<div class="acciones"><button class="btn izq" data-r="">Cancelar</button>` +
+      `<button class="btn" data-r="copia">Guardar como copia</button>` +
+      `<button class="btn principal" data-r="reemplazar">Reemplazar</button></div>`,
+      true,
+    );
+    $('modal').querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => {
+      cerrarModal();
+      resolver(b.dataset.r || null);
+    }));
+  });
+}
+
+async function importarArchivo(archivo) {
+  let x;
+  try {
+    x = leerArchivoPartido(await archivo.text());
+  } catch (e) {
+    await confirmar({ titulo: 'No se pudo importar', texto: e.message, aceptar: 'Entendido', soloAceptar: true });
+    dialogoPartidos();
+    return;
+  }
+  if (almacen.partidos[x.id]) {
+    const accion = await elegirImportacion(x);
+    if (!accion) { dialogoPartidos(); return; }
+    if (accion === 'copia') {
+      x.id = 'p' + Date.now().toString(36);
+      x.creado = new Date().toISOString();
+    }
+  }
+  almacen.partidos[x.id] = x;
+  cambiarPartido(x.id);
+  cerrarModal();
+  avisar(`Partido importado: ${nombre('rival', x)} vs ${nombre('propio', x)}`);
+}
+
 // ---------- Menú de partidos ----------
 
 function resumenPartido(x) {
@@ -1533,6 +1630,7 @@ function dialogoPartidos() {
       `<div class="partido-datos"><b>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))}</b>` +
       `<span class="tenue">${esc(fmtFecha(x.fecha))} · ${esc(resumenPartido(x))}</span></div>` +
       (actual ? '<span class="etiqueta">Abierto</span>' : `<button class="btn" data-abrir="${x.id}">Abrir</button>`) +
+      `<button class="btn" data-exportar="${x.id}" title="Descargar el partido como archivo JSON">Exportar</button>` +
       `<button class="btn" data-eliminar="${x.id}" title="Eliminar partido">Eliminar</button>` +
       `</div>`;
   }).join('');
@@ -1540,12 +1638,15 @@ function dialogoPartidos() {
     `<h2>Partidos</h2>` +
     `<p>Guardados en este navegador.</p>` +
     `<div class="partidos-lista">${filas || '<div class="vacio">Todavía no hay partidos.</div>'}</div>` +
-    `<div class="acciones"><button class="btn izq principal" id="d-crear">Partido nuevo</button>` +
+    `<div class="acciones"><button class="btn principal" id="d-crear">Partido nuevo</button>` +
+    `<button class="btn izq" id="d-importar">Importar JSON…</button>` +
     (partido() ? '<button class="btn" id="d-cerrar">Cerrar</button>' : '') + `</div>`,
     !!partido(),
   );
   if (partido()) $('d-cerrar').addEventListener('click', cerrarModal);
   $('d-crear').addEventListener('click', () => dialogoPartido({ nuevo: true, cancelable: !!partido() }));
+  $('d-importar').addEventListener('click', () => $('input-importar').click());
+  $('modal').querySelectorAll('[data-exportar]').forEach((b) => b.addEventListener('click', () => exportarPartido(b.dataset.exportar)));
   $('modal').querySelectorAll('[data-abrir]').forEach((b) => b.addEventListener('click', () => {
     cambiarPartido(b.dataset.abrir);
     cerrarModal();
@@ -1637,6 +1738,12 @@ function cargarVideoArchivo(archivo) {
 function conectarEventos() {
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-partidos').addEventListener('click', dialogoPartidos);
+  $('btn-exportar').addEventListener('click', () => { if (partido()) exportarPartido(almacen.actual); });
+  $('input-importar').addEventListener('change', (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (f) importarArchivo(f);
+  });
 
   $('form-youtube').addEventListener('submit', (ev) => {
     ev.preventDefault();
