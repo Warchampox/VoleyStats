@@ -370,6 +370,7 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
 }
 .teclas-paso.c2 { grid-template-columns: 1fr 1fr; }
 .teclas-paso.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.teclas-paso.c4 { grid-template-columns: repeat(4, 1fr); }
 .teclas-paso.c5 { grid-template-columns: repeat(5, 1fr); }
 .tecla-item { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; color: var(--texto-2); }
 .tecla-item span { overflow: hidden; text-overflow: ellipsis; }
@@ -428,8 +429,6 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
 
 /* ---------- Plantel ---------- */
 
-.jugadores { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 12px; min-height: 44px; }
-.jugadores > .etiqueta { flex: none; width: 112px; line-height: 1.3; }
 .jug-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-items: center; }
 .jug-chip {
   min-width: 30px; height: 28px; padding: 0 6px;
@@ -522,3 +521,16 @@ body.modo-stats .solo-captura { display: none !important; }
 .partido-fila.check { cursor: pointer; }
 .partido-fila.check input { width: 16px; height: 16px; accent-color: var(--texto); margin: 0; }
 .filtros-activos { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 10px; font-size: 12px; }
+
+.cancha-acciones { display: flex; align-items: center; gap: 8px; }
+.jug-menu { position: relative; }
+#btn-jugador { font-weight: 500; }
+#btn-jugador b { font-family: var(--mono); }
+#btn-jugador.con-jugador { border-color: var(--texto-3); }
+.jug-popover {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 5;
+  width: 300px; padding: 10px 12px 12px;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  background: var(--panel-estado); border: 1px solid var(--borde-fuerte); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}

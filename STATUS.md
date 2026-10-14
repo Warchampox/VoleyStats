@@ -90,7 +90,8 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 - Editor en el botón «Plantel» (pestaña por equipo; Enter agrega otra fila; valida
   números 0–99 sin repetir). Al guardar se recuerda por nombre de equipo en
   `voleystats:equipos` y se carga solo al crear un partido con ese nombre.
-- Fila «Jugador» bajo el panel de estado: un clic asigna `accion.jugador` a la última
+- Botón «Jugador ▾» en el encabezado de la cancha (menú desplegable; antes era una fila
+  fija que achicaba la cancha): un clic en un número asigna `accion.jugador` a la última
   recepción o ataque del rally en pantalla; otro clic en el mismo lo quita (deshacible).
   Solo recepción y ataque llevan jugador (decisión de Martín).
 
@@ -110,6 +111,12 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   Panel plegable: muestra solo los activos.
 - Los clips parten 2 s antes de la recepción (side-out) o de la armada.
 - Estado de estadísticas en memoria (`stats`), no se guarda.
+
+### Espacio de la cancha (pedido por Martín)
+
+- Leyenda oculta por defecto, con botón «Leyenda» (preferencia en `voleystats:prefs`).
+- Teclas del paso de armada y de rotación inicial en 4 columnas: el panel de estado queda en ~222 px.
+- A 1440×812 (la ventana de Martín) la cancha queda en su tamaño completo (512×302).
 
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

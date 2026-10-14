@@ -143,7 +143,7 @@ const ACCIONES_CON_JUGADOR = ['recepcion', 'ataque'];
 const VERSION_DATOS = 1;
 
 let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
-let prefs = { pausarAlMarcar: true, velocidad: 1 };
+let prefs = { pausarAlMarcar: true, velocidad: 1, leyenda: false };
 
 // Cada cambio futuro al formato agrega en migrarPartido un paso
 // (version N → N+1). Se usa al cargar localStorage y al importar archivos.
@@ -1009,7 +1009,7 @@ function contenidoEstado(e) {
           ...[1, 2, 3, 4, 5, 6].map((n) => teclaItem(String(n), `P${n}`, '', true)),
           teclaItem('Esc', 'Cancelar'),
         ],
-        cols: 'c3',
+        cols: 'c4',
       };
 
     case 'setTerminado': {
@@ -1063,13 +1063,13 @@ function contenidoEstado(e) {
         tipo: 'tecla', titulo: 'Tipo de armada',
         contexto: `${fase} Después se marca en la cancha dónde cae.`,
         teclas: [
-          ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), ARMADAS[t].nombre, muestra(t))),
+          ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), t === 'primer' ? '1er tiempo' : ARMADAS[t].corto, muestra(t))),
           teclaItem(nombreTecla(TECLAS.recovery), 'Recovery'),
-          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe balón libre'),
-          teclaItem(nombreTecla(TECLAS.pasaLibre), 'Pasa balón libre'),
-          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar rally sin ataque'),
+          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe libre'),
+          teclaItem(nombreTecla(TECLAS.pasaLibre), 'Pasa libre'),
+          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar sin ataque'),
         ],
-        cols: 'c2',
+        cols: 'c4',
       };
     }
 
@@ -1137,21 +1137,36 @@ function accionParaJugador() {
   return null;
 }
 
+// Menú desplegable en el encabezado de la cancha
 function renderJugadores() {
-  const cont = $('jugadores');
+  const boton = $('btn-jugador');
+  const pop = $('jug-popover');
   const p = partido();
-  if (!p) { cont.innerHTML = ''; return; }
+  if (!p) { boton.hidden = true; pop.hidden = true; return; }
+  boton.hidden = false;
   const lista = jugadoresDe(p.scouteado);
   const accion = accionParaJugador();
-  const destino = accion ? (accion.tipo === 'ataque' ? 'último ataque' : 'última recepción') : 'sin recepción ni ataque';
+  const asignado = accion && accion.jugador != null ? `#${accion.jugador}` : '—';
+  boton.innerHTML = `Jugador <b>${accion ? asignado : ''}</b> ▾`;
+  boton.title = !accion ? 'No hay recepción ni ataque para asignar'
+    : accion.tipo === 'ataque' ? 'Asignar jugador al último ataque' : 'Asignar jugador a la última recepción';
+  boton.classList.toggle('con-jugador', !!(accion && accion.jugador != null));
+  if (pop.hidden) return;
+  const destino = accion ? (accion.tipo === 'ataque' ? 'Último ataque' : 'Última recepción') : 'Sin recepción ni ataque';
   const chips = lista.length
     ? lista.map((j) =>
       `<button class="jug-chip${accion && accion.jugador === j.num ? ' activo' : ''}" data-jug="${j.num}" ${accion ? '' : 'disabled'} title="${esc(textoJugador(j.num))}">` +
       `${j.num}${j.pos ? `<small>${POSICIONES[j.pos].corto}</small>` : ''}</button>`).join('')
     : `<span class="tenue">Sin plantel del ${esc(nombre(p.scouteado))}.</span>`;
-  cont.innerHTML =
-    `<span class="etiqueta">Jugador · ${destino}</span>` +
-    `<div class="jug-chips">${chips}<button class="jug-chip mas" id="jug-editar" title="Editar plantel">${lista.length ? '+' : 'Agregar'}</button></div>`;
+  pop.innerHTML =
+    `<span class="etiqueta">${destino}</span>` +
+    `<div class="jug-chips">${chips}</div>` +
+    `<button class="btn chico" id="jug-editar">${lista.length ? 'Editar plantel' : 'Agregar jugadores'}</button>`;
+}
+
+function alternarMenuJugador(abrir = $('jug-popover').hidden) {
+  $('jug-popover').hidden = !abrir;
+  renderJugadores();
 }
 
 function asignarJugador(num) {
@@ -1324,6 +1339,11 @@ function renderCancha() {
   if (e.modo === 'armadaClic') svg.style.cursor = cursorMira(colorVar(ARMADAS[pendiente.armada].variable));
   else if (e.modo === 'golpe') svg.style.cursor = cursorMira(colorVar('--texto'));
   else svg.style.cursor = '';
+}
+
+function aplicarLeyenda() {
+  $('leyenda').hidden = !prefs.leyenda;
+  $('btn-leyenda').classList.toggle('activo', !!prefs.leyenda);
 }
 
 function renderLeyenda() {
@@ -2390,10 +2410,20 @@ function conectarEventos() {
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-partidos').addEventListener('click', dialogoPartidos);
   $('btn-plantel').addEventListener('click', dialogoPlantel);
-  $('jugadores').addEventListener('click', (ev) => {
-    if (ev.target.closest('#jug-editar')) { dialogoPlantel(); return; }
+  $('btn-jugador').addEventListener('click', () => alternarMenuJugador());
+  $('btn-leyenda').addEventListener('click', () => {
+    prefs.leyenda = !prefs.leyenda;
+    guardarPrefs();
+    aplicarLeyenda();
+  });
+  $('jug-popover').addEventListener('click', (ev) => {
+    if (ev.target.closest('#jug-editar')) { alternarMenuJugador(false); dialogoPlantel(); return; }
     const b = ev.target.closest('[data-jug]');
-    if (b) asignarJugador(Number(b.dataset.jug));
+    if (b) { alternarMenuJugador(false); asignarJugador(Number(b.dataset.jug)); }
+  });
+  // Clic fuera del menú lo cierra
+  document.addEventListener('mousedown', (ev) => {
+    if (!$('jug-popover').hidden && !ev.target.closest('.jug-menu')) alternarMenuJugador(false);
   });
   $('btn-exportar').addEventListener('click', () => { if (partido()) exportarPartido(almacen.actual); });
   $('input-importar').addEventListener('change', (ev) => {
@@ -2482,6 +2512,7 @@ function iniciar() {
   Video.vel = VELOCIDADES.includes(prefs.velocidad) ? prefs.velocidad : 1;
   conectarEventos();
   renderLeyenda();
+  aplicarLeyenda();
   render();
   setInterval(actualizarVideoUI, 100);
   setInterval(renderGuardado, 1000);
