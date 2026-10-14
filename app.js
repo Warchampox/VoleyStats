@@ -480,6 +480,12 @@ const Video = {
     if (this.yt) {
       this.yt.getIframe().hidden = false;
       this.yt.cueVideoById(id);
+      // Esperar a que YouTube cargue el video nuevo antes de permitir saltos
+      for (let i = 0; i < 50; i++) {
+        const datos = this.yt.getVideoData && this.yt.getVideoData();
+        if (datos && datos.video_id === id && this.yt.getDuration() > 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
       return;
     }
     this.ytListo = false;
@@ -534,6 +540,7 @@ const ui = {
   guardadoEn: null,
   errorGuardado: false,
   vista: 'rally',
+  modo: 'captura', // 'captura' | 'stats'
   cambiandoVideo: false,
   rallyPausado: null,
   aviso: null,
@@ -569,8 +576,9 @@ function deshacer() {
 
 function avisar(texto) {
   ui.aviso = { texto, hasta: Date.now() + 2500 };
-  renderEstado();
-  setTimeout(renderEstado, 2600);
+  const pintar = () => (ui.modo === 'stats' ? renderAvisoStats() : renderEstado());
+  pintar();
+  setTimeout(pintar, 2600);
 }
 
 // =====================================================================
@@ -630,7 +638,7 @@ function cerrarRally(set, r, gana) {
 function teclaCaptura(k) {
   const e = estado();
   const { modo, p, set, r } = e;
-  if (modo === 'sinPartido') return false;
+  if (modo === 'sinPartido' || ui.modo === 'stats') return false;
 
   if (k === TECLAS.nuevoRally) {
     if (modo === 'esperando') {
@@ -834,6 +842,7 @@ function render() {
   renderCargaVideo();
   renderControles();
   renderJugadores();
+  if (ui.modo === 'stats') renderStats();
 }
 
 function renderCabecera() {
@@ -1483,6 +1492,450 @@ function actualizarVideoUI() {
   }
 }
 
+
+// =====================================================================
+// Estadísticas (fase 5): vistas, filtros combinables y clips
+// =====================================================================
+
+const stats = {
+  partidos: null, // Set de ids a sumar; null = solo el partido abierto
+  filtros: { set: [], rot: [], pase: [], fase: [], armada: [], zona: [], golpe: [], resultado: [], jugador: [] },
+  vista: 'armador', // armador | ataque | sideout | recepcion
+  mapa: 'trayectorias', // trayectorias | calor
+  filtrosAbiertos: false,
+};
+
+const VISTAS = {
+  armador: 'Armador',
+  ataque: 'Ataque',
+  sideout: 'Side-out',
+  recepcion: 'Recepción',
+};
+
+const FASES = { recepcion: 'Recepción', contra: 'Contra', recovery: 'Recovery', libre: 'Libre' };
+const ORDEN_ZONAS = ['Z4', 'Z3', 'Z2', 'Z1', 'Z6', 'Z5'];
+const CALIFS = ['#', '+', '!', '-', '='];
+
+// Qué filtros aplican a cada tipo de dato
+const DIMS_DATOS = {
+  jugadas: ['set', 'rot', 'pase', 'fase', 'armada', 'zona', 'golpe', 'resultado', 'jugador'],
+  recepciones: ['set', 'rot', 'pase', 'jugador'],
+  rallies: ['set', 'rot', 'pase'],
+};
+const DATOS_VISTA = { armador: 'jugadas', ataque: 'jugadas', sideout: 'rallies', recepcion: 'recepciones' };
+
+function equipoScout(p) { return slug(nombre(p.scouteado, p)); }
+
+function partidosCompatibles() {
+  const p = partido();
+  if (!p) return [];
+  const eq = equipoScout(p);
+  return Object.values(almacen.partidos)
+    .filter((x) => equipoScout(x) === eq)
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+}
+
+function partidosIncluidos() {
+  const p = partido();
+  if (!p) return [];
+  if (!stats.partidos) return [p];
+  const lista = partidosCompatibles().filter((x) => stats.partidos.has(x.id));
+  return lista.length ? lista : [p];
+}
+
+function recolectar(partidos) {
+  const jugadas = [], recepciones = [], rallies = [];
+  for (const p of partidos) {
+    const scout = p.scouteado;
+    for (const set of p.sets) {
+      set.rallies.forEach((r, idx) => {
+        const base = { pid: p.id, set: set.numero, rally: idx + 1, rot: rotacionEn(set, idx, scout) };
+        const rec = r.acciones.find((a) => a.tipo === 'recepcion');
+        if (r.saca !== scout && r.gana) {
+          const primerAtaque = r.acciones.find((a) => a.tipo === 'ataque');
+          rallies.push({
+            ...base, t: r.t, gana: r.gana, sideOut: r.gana === scout,
+            pase: rec ? rec.calif : null,
+            primerPunto: !!(rec && primerAtaque && primerAtaque.resultado === 'punto' && faseArmada(r, r.acciones[r.acciones.indexOf(primerAtaque) - 1]) === 'recepcion'),
+          });
+        }
+        if (rec) {
+          recepciones.push({ ...base, t: Math.max(0, rec.t - 2), pase: rec.calif, jugador: rec.jugador ?? null, gana: r.gana });
+        }
+        r.acciones.forEach((a, i) => {
+          if (a.tipo !== 'armada') return;
+          const previa = r.acciones[i - 1];
+          const fase = faseArmada(r, a);
+          const sig = r.acciones[i + 1];
+          const ataque = sig && sig.tipo === 'ataque' ? sig : null;
+          jugadas.push({
+            ...base,
+            t: Math.max(0, (fase === 'recepcion' ? previa.t : a.t) - 2),
+            fase,
+            pase: fase === 'recepcion' ? previa.calif : null,
+            armada: a.armada,
+            zona: zonaAtaque(a),
+            golpe: ataque ? ataque.golpe : null,
+            resultado: ataque ? ataque.resultado : null,
+            dir: ataque ? direccion(a, ataque) : null,
+            destino: ataque ? destino(ataque) : null,
+            jugador: ataque ? ataque.jugador ?? null : null,
+            armadaObj: a,
+            ataque,
+          });
+        });
+      });
+    }
+  }
+  return { jugadas, recepciones, rallies };
+}
+
+function filtrar(lista, tipo) {
+  const dims = DIMS_DATOS[tipo].filter((d) => stats.filtros[d].length);
+  return lista.filter((x) => dims.every((d) => stats.filtros[d].includes(x[d])));
+}
+
+function hayFiltros() { return Object.values(stats.filtros).some((v) => v.length); }
+
+function alternarFiltro(dim, valor) {
+  const arr = stats.filtros[dim];
+  const i = arr.indexOf(valor);
+  if (i >= 0) arr.splice(i, 1); else arr.push(valor);
+  renderStats();
+}
+
+// Clic en una celda: fija exactamente esos valores (o los quita si ya estaban)
+function fijarFiltros(obj) {
+  const yaEstan = Object.entries(obj).every(([d, v]) => stats.filtros[d].length === 1 && stats.filtros[d][0] === v);
+  for (const [d, v] of Object.entries(obj)) stats.filtros[d] = yaEstan ? [] : [v];
+  renderStats();
+}
+
+function pct(a, b) { return b ? Math.round((100 * a) / b) : null; }
+function txtPct(n) { return n == null ? '—' : `${n}%`; }
+
+function celda(frac, contenido, attrs = '', clase = '') {
+  const a = frac > 0 ? (0.07 + 0.6 * frac).toFixed(2) : 0;
+  const estilo = frac > 0 ? `background:rgba(230,232,235,${a});${frac > 0.6 ? 'color:var(--fondo);' : ''}` : '';
+  return `<td class="num${clase}" style="${estilo}" ${attrs}>${contenido}</td>`;
+}
+
+function marcaFiltro(obj) {
+  const e = Object.entries(obj);
+  return e.length && e.every(([d, v]) => stats.filtros[d].includes(v)) ? ' sel' : '';
+}
+
+// ---------- Vistas ----------
+
+function tablaZonas(filas, titulo) {
+  // filas: [{ etiqueta, jugadas, filtro: {dim: valor} }]
+  const cab = `<tr><th>${titulo}</th>${ORDEN_ZONAS.map((z) => `<th>${z}</th>`).join('')}<th>n</th></tr>`;
+  const cuerpo = filas.map((f) => {
+    const n = f.jugadas.length;
+    const celdas = ORDEN_ZONAS.map((z) => {
+      const c = f.jugadas.filter((j) => j.zona === z).length;
+      const filtro = { ...f.filtro, zona: z };
+      return celda(n ? c / n : 0, c ? txtPct(pct(c, n)) : '·',
+        `data-fijar='${JSON.stringify(filtro)}' title="${c} de ${n}"`, ` clic${marcaFiltro(filtro)}`);
+    }).join('');
+    return `<tr><th class="clic${marcaFiltro(f.filtro)}" data-fijar='${JSON.stringify(f.filtro)}'>${f.etiqueta}</th>${celdas}<td class="num tenue">${n}</td></tr>`;
+  }).join('');
+  return `<table class="tabla">${cab}${cuerpo}</table>`;
+}
+
+function canchaMini(contenido, p) {
+  return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p)}${contenido}</svg>`;
+}
+
+function vistaArmador(d) {
+  const js = filtrar(d.jugadas, 'jugadas');
+  const porRot = [1, 2, 3, 4, 5, 6].map((r) => ({ etiqueta: `P${r}`, jugadas: js.filter((j) => j.rot === r), filtro: { rot: r } }));
+  porRot.push({ etiqueta: 'Total', jugadas: js, filtro: {} });
+  const porPase = ['#', '+', '!', '-'].map((c) => ({ etiqueta: c, jugadas: js.filter((j) => j.pase === c), filtro: { pase: c } }));
+  const puntos = js.map((j) => {
+    const [x, y] = aVB(j.armadaObj.punto);
+    return `<circle cx="${x}" cy="${y}" r="2.2" fill="none" stroke="var(${ARMADAS[j.armada].variable})" stroke-width="1.1" opacity="0.85"/>`;
+  }).join('');
+  const porTipo = Object.keys(ARMADAS).map((t) => {
+    const c = js.filter((j) => j.armada === t).length;
+    return `<span class="ley clic${marcaFiltro({ armada: t })}" data-fijar='${JSON.stringify({ armada: t })}'>${muestra(t)}${ARMADAS[t].corto} <b>${txtPct(pct(c, js.length))}</b></span>`;
+  }).join('');
+  return `<p class="stats-nota">${js.length} armadas. Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
+    `<h3>Por rotación</h3>${tablaZonas(porRot, 'Rot.')}` +
+    `<h3>Por calidad de pase <span class="tenue">(solo side-out)</span></h3>${tablaZonas(porPase, 'Pase')}` +
+    `<h3>Tipo de armada</h3><div class="leyenda-fila">${porTipo}</div>` +
+    canchaMini(puntos, partido());
+}
+
+function vistaAtaque(d) {
+  const js = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque);
+  const fila = (etiqueta, lista, filtro) => {
+    const n = lista.length;
+    const cuenta = (f) => lista.filter(f).length;
+    const remates = lista.filter((j) => j.golpe === 'remate');
+    const conRes = lista.filter((j) => j.resultado);
+    const pts = cuenta((j) => j.resultado === 'punto');
+    const malos = cuenta((j) => j.resultado === 'error' || j.resultado === 'bloqueado');
+    const dirPct = (dir) => {
+      const c = remates.filter((j) => j.dir === dir).length;
+      return celda(remates.length ? c / remates.length : 0, c ? txtPct(pct(c, remates.length)) : '·');
+    };
+    const toques = cuenta((j) => j.golpe !== 'remate');
+    const ef = conRes.length ? Math.round((100 * (pts - malos)) / conRes.length) : null;
+    return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
+      `<td class="num tenue">${n}</td>${dirPct('calle')}${dirPct('diago')}${dirPct('diago corta')}` +
+      `<td class="num">${toques ? txtPct(pct(toques, n)) : '·'}</td>` +
+      `<td class="num">${txtPct(pct(pts, conRes.length))}</td><td class="num">${txtPct(pct(malos, conRes.length))}</td>` +
+      `<td class="num"><b>${ef == null ? '—' : (ef > 0 ? '+' : '') + ef + '%'}</b></td></tr>`;
+  };
+  const filas = ORDEN_ZONAS.map((z) => fila(z, js.filter((j) => j.zona === z), { zona: z })).join('') + fila('Total', js, {});
+  let mapa;
+  if (stats.mapa === 'calor') {
+    const bins = {};
+    let max = 0;
+    for (const j of js) {
+      const [x, y] = aMetros(j.ataque.punto);
+      const k = `${Math.floor(x)},${Math.floor(y)}`;
+      bins[k] = (bins[k] || 0) + 1;
+      max = Math.max(max, bins[k]);
+    }
+    mapa = Object.entries(bins).map(([k, c]) => {
+      const [x, y] = k.split(',').map(Number);
+      return `<rect x="${x * VB}" y="${y * VB}" width="${VB}" height="${VB}" fill="var(--texto)" opacity="${(0.12 + 0.7 * (c / max)).toFixed(2)}"/>`;
+    }).join('');
+  } else {
+    const op = js.length > 40 ? 0.35 : js.length > 15 ? 0.55 : 0.85;
+    mapa = js.map((j) => dibujarJugada({ armada: j.armadaObj, ataque: j.ataque }, op, false)).join('');
+  }
+  return `<p class="stats-nota">${js.length} ataques. Dirección sobre remates; toque sobre el total de la fila. Eficacia = (puntos − errores − bloqueos) / ataques con resultado.</p>` +
+    `<table class="tabla"><tr><th>Zona</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Toque</th><th>Punto</th><th>Err+Bl</th><th>Efic.</th></tr>${filas}</table>` +
+    `<div class="fila-titulo"><h3>Impactos</h3><div class="selector" id="selector-mapa">` +
+    `<button data-mapa="trayectorias" class="${stats.mapa === 'trayectorias' ? 'activo' : ''}">Trayectorias</button>` +
+    `<button data-mapa="calor" class="${stats.mapa === 'calor' ? 'activo' : ''}">Calor</button></div></div>` +
+    canchaMini(mapa, partido());
+}
+
+function vistaSideout(d) {
+  const rs = filtrar(d.rallies, 'rallies');
+  const fila = (etiqueta, lista, filtro) => {
+    const n = lista.length;
+    const so = lista.filter((r) => r.sideOut).length;
+    const pp = lista.filter((r) => r.primerPunto).length;
+    const p100 = pct(so, n);
+    return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
+      `<td class="num tenue">${n}</td><td class="num">${so}</td><td class="num"><b>${txtPct(p100)}</b></td>` +
+      `<td class="barra-celda"><span style="width:${p100 || 0}%"></span></td><td class="num">${txtPct(pct(pp, n))}</td></tr>`;
+  };
+  const cab = (t) => `<tr><th>${t}</th><th>Recibe</th><th>Gana</th><th>Side-out</th><th></th><th>1er ataque</th></tr>`;
+  const porRot = [1, 2, 3, 4, 5, 6].map((r) => fila(`P${r}`, rs.filter((x) => x.rot === r), { rot: r })).join('') + fila('Total', rs, {});
+  const porPase = CALIFS.map((c) => fila(c, rs.filter((x) => x.pase === c), { pase: c })).join('');
+  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partido().scouteado))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
+    `<h3>Por rotación</h3><table class="tabla">${cab('Rot.')}${porRot}</table>` +
+    `<h3>Por calidad de pase</h3><table class="tabla">${cab('Pase')}${porPase}</table>`;
+}
+
+function vistaRecepcion(d) {
+  const rs = filtrar(d.recepciones, 'recepciones');
+  const n = rs.length;
+  const cuenta = (c) => rs.filter((r) => r.pase === c).length;
+  const barra = CALIFS.map((c) => {
+    const k = cuenta(c);
+    return k ? `<span class="seg ${CALIF[c].clase}" style="flex:${k}" data-fijar='${JSON.stringify({ pase: c })}' title="${c}: ${k}">${c} ${txtPct(pct(k, n))}</span>` : '';
+  }).join('');
+  const pos = cuenta('#') + cuenta('+');
+  const resumen = `<div class="kpis"><div><b>${n}</b><span>recepciones</span></div>` +
+    `<div><b>${txtPct(pct(pos, n))}</b><span>positiva (# +)</span></div>` +
+    `<div><b>${txtPct(pct(cuenta('#'), n))}</b><span>perfecta</span></div>` +
+    `<div><b>${txtPct(pct(cuenta('='), n))}</b><span>error</span></div></div>`;
+  const fila = (etiqueta, lista, filtro) => {
+    const m = lista.length;
+    const k = (c) => lista.filter((r) => r.pase === c).length;
+    return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th><td class="num tenue">${m}</td>` +
+      CALIFS.map((c) => celda(m ? k(c) / m : 0, k(c) || '·')).join('') +
+      `<td class="num"><b>${txtPct(pct(k('#') + k('+'), m))}</b></td><td class="num">${txtPct(pct(k('='), m))}</td></tr>`;
+  };
+  const cab = (t) => `<tr><th>${t}</th><th>n</th>${CALIFS.map((c) => `<th>${c}</th>`).join('')}<th>Posit.</th><th>Error</th></tr>`;
+  const conJugador = [...new Set(rs.filter((r) => r.jugador != null).map((r) => r.jugador))].sort((a, b) => a - b);
+  const porJug = conJugador.length
+    ? `<h3>Por jugador</h3><table class="tabla">${cab('Jug.')}${conJugador.map((j) => fila(`#${j}`, rs.filter((r) => r.jugador === j), { jugador: j })).join('')}</table>`
+    : '<p class="stats-nota">Asigna jugadores a las recepciones para ver la tabla por jugador.</p>';
+  const porRot = [1, 2, 3, 4, 5, 6].map((r) => fila(`P${r}`, rs.filter((x) => x.rot === r), { rot: r })).join('');
+  return resumen + (n ? `<div class="barra-calif">${barra}</div>` : '') + porJug +
+    `<h3>Por rotación</h3><table class="tabla">${cab('Rot.')}${porRot}</table>`;
+}
+
+// ---------- Panel de filtros y alcance ----------
+
+function renderFiltros(d) {
+  const sets = [...new Set(d.jugadas.map((j) => j.set).concat(d.rallies.map((r) => r.set)))].sort();
+  const jugadores = [...new Set(d.jugadas.concat(d.recepciones).map((x) => x.jugador).filter((x) => x != null))].sort((a, b) => a - b);
+  const aplican = DIMS_DATOS[DATOS_VISTA[stats.vista]];
+  const filas = [
+    ['set', 'Set', sets, (v) => v],
+    ['rot', 'Rotación', [1, 2, 3, 4, 5, 6], (v) => `P${v}`],
+    ['pase', 'Pase', CALIFS, (v) => v],
+    ['fase', 'Fase', Object.keys(FASES), (v) => FASES[v]],
+    ['armada', 'Armada', Object.keys(ARMADAS), (v) => `${muestra(v)}${ARMADAS[v].corto}`],
+    ['zona', 'Zona', ORDEN_ZONAS, (v) => v],
+    ['golpe', 'Golpe', Object.keys(GOLPES), (v) => (v === 'remate' ? 'Remate' : GOLPES[v].corto)],
+    ['resultado', 'Resultado', Object.keys(RESULTADOS), (v) => RESULTADOS[v].nombre],
+    ['jugador', 'Jugador', jugadores, (v) => `#${v}`],
+  ];
+  const activos = filas.flatMap(([k, , , et]) => stats.filtros[k].map((v) =>
+    `<button class="fchip activo" data-dim="${k}" data-val='${JSON.stringify(v)}' title="Quitar filtro">${et(v)} ✕</button>`));
+  const n = activos.length;
+  $('stats-filtros').innerHTML =
+    `<div class="panel-cab"><span class="etiqueta fuerte">Filtros${n ? ` · ${n} activo${n === 1 ? '' : 's'}` : ''}</span>` +
+    `<div style="display:flex;gap:6px"><button class="btn chico" id="limpiar-filtros" ${n ? '' : 'disabled'}>Limpiar</button>` +
+    `<button class="btn chico" id="plegar-filtros">${stats.filtrosAbiertos ? 'Ocultar' : 'Mostrar todos'}</button></div></div>` +
+    (stats.filtrosAbiertos ? '' : `<div class="filtros-activos">${n ? activos.join('') : '<span class="tenue">Sin filtros: se muestran todas las jugadas. Clic en una celda o «Mostrar todos».</span>'}</div>`) +
+    (!stats.filtrosAbiertos ? '' : `<div class="filtros">${filas.map(([k, nom, vals, et]) =>
+      `<div class="filtro-fila${aplican.includes(k) ? '' : ' no-aplica'}"><span class="etiqueta">${nom}</span><div class="filtro-chips">` +
+      (vals.length ? vals.map((v) =>
+        `<button class="fchip${stats.filtros[k].includes(v) ? ' activo' : ''}" data-dim="${k}" data-val='${JSON.stringify(v)}'>${et(v)}</button>`).join('')
+        : '<span class="tenue">—</span>') +
+      `</div></div>`).join('')}</div>`);
+}
+
+function renderAlcance() {
+  const p = partido();
+  const compat = partidosCompatibles();
+  const incl = partidosIncluidos();
+  $('stats-alcance').innerHTML =
+    `<div><span class="etiqueta">Scouteando</span> <b>${esc(nombre(p.scouteado))}</b>` +
+    `<div class="tenue mono">${incl.length === 1 ? esc(`${nombre('rival', incl[0])} vs ${nombre('propio', incl[0])} · ${fmtFecha(incl[0].fecha)}`) : `${incl.length} partidos sumados`}` +
+    ` · ${compat.length} ${compat.length === 1 ? 'partido guardado' : 'partidos guardados'} de este equipo</div></div>` +
+    `<button class="btn" id="elegir-partidos">Elegir partidos…</button>`;
+}
+
+function renderAvisoStats() {
+  const el = $('clips-aviso');
+  if (!el) return;
+  const aviso = ui.aviso && ui.aviso.hasta > Date.now() ? ui.aviso.texto : '';
+  el.textContent = aviso;
+}
+
+function renderClips(d) {
+  const tipo = DATOS_VISTA[stats.vista];
+  const lista = filtrar(d[tipo], tipo).slice().sort((a, b) =>
+    a.pid === b.pid ? a.set - b.set || a.rally - b.rally || a.t - b.t : a.pid.localeCompare(b.pid));
+  const varios = partidosIncluidos().length > 1;
+  const corto = (pid) => {
+    const x = almacen.partidos[pid];
+    return x ? `${fmtFecha(x.fecha).replace(/ \d{4}$/, '')}` : '';
+  };
+  const filas = lista.map((c) => {
+    let det;
+    if (tipo === 'jugadas') {
+      const calc = c.ataque ? textoAtaque(c.armadaObj, c.ataque) : '';
+      det = (c.pase ? califBadge(c.pase) : `<span class="tenue">${FASES[c.fase].toLowerCase()}</span>`) +
+        muestra(c.armada) + `<span>${ARMADAS[c.armada].corto}${c.zona ? ' ' + c.zona : ''}</span>` +
+        (calc ? `<span class="calc">· ${esc(calc)}</span>` : '') +
+        (c.resultado ? simboloMini(c.resultado) + `<span>${RESULTADOS[c.resultado].nombre}</span>` : c.ataque ? '' : '<span class="calc">sin ataque</span>') +
+        (c.jugador != null ? `<span class="jug">${c.jugador}</span>` : '');
+    } else if (tipo === 'recepciones') {
+      det = califBadge(c.pase) + `<span style="font-family:var(--sans)">${CALIF[c.pase].nombre}</span>` +
+        (c.jugador != null ? `<span class="jug">${c.jugador}</span>` : '') +
+        `<span class="calc">· gana ${esc(nombre(c.gana, almacen.partidos[c.pid]))}</span>`;
+    } else {
+      det = (c.pase ? califBadge(c.pase) : '<span class="tenue">sin recepción</span>') +
+        `<span>${c.sideOut ? 'Side-out' : 'Punto rival'}</span>` + (c.primerPunto ? '<span class="calc">· 1er ataque</span>' : '');
+    }
+    return `<div class="fila fila-clip" data-pid="${c.pid}" data-t="${c.t}">` +
+      `<span class="tenue">${varios ? esc(corto(c.pid)) + ' · ' : ''}S${c.set}·R${c.rally}</span>` +
+      `<span class="t">${fmtTiempo(c.t)}</span><span class="tenue">${c.rot ? 'P' + c.rot : '—'}</span>` +
+      `<span class="detalle">${det}</span><button class="ir" title="Reproducir">▶</button></div>`;
+  }).join('');
+  const nombres = { jugadas: 'jugadas', recepciones: 'recepciones', rallies: 'rallies' };
+  $('clips-titulo').textContent = `Clips · ${VISTAS[stats.vista]}`;
+  $('clips-cuenta').textContent = `${lista.length} ${nombres[tipo]}`;
+  $('clips-lista').innerHTML = filas || '<div class="vacio">No hay jugadas con estos filtros.</div>';
+  renderAvisoStats();
+}
+
+function renderStats() {
+  const p = partido();
+  if (!p) return;
+  const d = recolectar(partidosIncluidos());
+  renderAlcance();
+  renderFiltros(d);
+  $('stats-tabs').innerHTML = Object.entries(VISTAS)
+    .map(([k, v]) => `<button data-vistastats="${k}" class="${stats.vista === k ? 'activo' : ''}">${v}</button>`).join('');
+  const vistas = { armador: vistaArmador, ataque: vistaAtaque, sideout: vistaSideout, recepcion: vistaRecepcion };
+  $('stats-contenido').innerHTML = vistas[stats.vista](d);
+  renderClips(d);
+}
+
+async function reproducirClip(pid, t) {
+  if (pid !== almacen.actual) {
+    if (!almacen.partidos[pid]) return;
+    await cambiarPartido(pid);
+  }
+  if (!Video.fuente) {
+    const x = partido();
+    avisar(x.video && x.video.tipo === 'local'
+      ? `Abre el archivo «${x.video.nombre}» y vuelve a hacer clic en el clip.`
+      : 'Carga el video de este partido y vuelve a hacer clic en el clip.');
+    return;
+  }
+  Video.saltar(t);
+  Video.reproducir();
+}
+
+function dialogoElegirPartidos() {
+  const compat = partidosCompatibles();
+  const incl = new Set(partidosIncluidos().map((x) => x.id));
+  abrirModal(
+    `<h2>Partidos a sumar</h2><p>Partidos guardados en que se scoutea a ${esc(nombre(partido().scouteado))}.</p>` +
+    `<div class="partidos-lista">${compat.map((x) =>
+      `<label class="partido-fila check"><input type="checkbox" value="${x.id}" ${incl.has(x.id) ? 'checked' : ''}>` +
+      `<div class="partido-datos"><b>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))}</b>` +
+      `<span class="tenue">${esc(fmtFecha(x.fecha))} · ${esc(resumenPartido(x))}</span></div></label>`).join('')}</div>` +
+    `<div class="acciones"><button class="btn izq" id="ep-todos">Todos</button><button class="btn" id="ep-cancelar">Cancelar</button><button class="btn principal" id="ep-ok">Aplicar</button></div>`,
+    true,
+  );
+  $('ep-todos').addEventListener('click', () => $('modal').querySelectorAll('input[type=checkbox]').forEach((c) => { c.checked = true; }));
+  $('ep-cancelar').addEventListener('click', cerrarModal);
+  $('ep-ok').addEventListener('click', () => {
+    const ids = [...$('modal').querySelectorAll('input:checked')].map((c) => c.value);
+    stats.partidos = ids.length ? new Set(ids) : null;
+    cerrarModal();
+    renderStats();
+  });
+}
+
+function cambiarModo(modo) {
+  ui.modo = modo;
+  document.body.classList.toggle('modo-stats', modo === 'stats');
+  $('selector-modo').querySelectorAll('button').forEach((b) => b.classList.toggle('activo', b.dataset.modo === modo));
+  render();
+}
+
+function conectarStats() {
+  $('selector-modo').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-modo]');
+    if (b && partido()) cambiarModo(b.dataset.modo);
+  });
+  $('stats').addEventListener('click', (ev) => {
+    const t = ev.target;
+    const chip = t.closest('[data-dim]');
+    if (chip) { alternarFiltro(chip.dataset.dim, JSON.parse(chip.dataset.val)); return; }
+    const fij = t.closest('[data-fijar]');
+    if (fij) { fijarFiltros(JSON.parse(fij.dataset.fijar)); return; }
+    const tab = t.closest('[data-vistastats]');
+    if (tab) { stats.vista = tab.dataset.vistastats; renderStats(); return; }
+    const mapa = t.closest('[data-mapa]');
+    if (mapa) { stats.mapa = mapa.dataset.mapa; renderStats(); return; }
+    if (t.closest('#plegar-filtros')) { stats.filtrosAbiertos = !stats.filtrosAbiertos; renderStats(); return; }
+    if (t.closest('#limpiar-filtros')) { for (const k of Object.keys(stats.filtros)) stats.filtros[k] = []; renderStats(); return; }
+    if (t.closest('#elegir-partidos')) dialogoElegirPartidos();
+  });
+  $('clips-lista').addEventListener('click', (ev) => {
+    const f = ev.target.closest('.fila-clip');
+    if (f) reproducirClip(f.dataset.pid, Number(f.dataset.t));
+  });
+}
+
 // =====================================================================
 // Teclado
 // =====================================================================
@@ -1501,7 +1954,11 @@ document.addEventListener('keydown', (ev) => {
   if (esCampoTexto(ev.target)) return;
   const k = ev.key.toLowerCase();
 
-  if ((ev.ctrlKey || ev.metaKey) && k === 'z' && !ev.shiftKey) { ev.preventDefault(); deshacer(); return; }
+  if ((ev.ctrlKey || ev.metaKey) && k === 'z' && !ev.shiftKey) {
+    ev.preventDefault();
+    if (ui.modo === 'captura') deshacer();
+    return;
+  }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
   if (k === TECLAS.reproducir) { ev.preventDefault(); if (!ev.repeat) Video.alternar(); return; }
@@ -1886,8 +2343,9 @@ function cambiarPartido(id) {
   Video.soltarLocal();
   if (Video.yt && Video.ytListo) { Video.yt.stopVideo(); Video.yt.getIframe().hidden = true; }
   Video.fuente = null;
-  if (p.video && p.video.tipo === 'youtube') cargarVideoYouTube(p.video.url, false);
+  const carga = p.video && p.video.tipo === 'youtube' ? cargarVideoYouTube(p.video.url, false) : Promise.resolve();
   render();
+  return carga;
 }
 
 // =====================================================================
@@ -1928,6 +2386,7 @@ function cargarVideoArchivo(archivo) {
 // =====================================================================
 
 function conectarEventos() {
+  conectarStats();
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-partidos').addEventListener('click', dialogoPartidos);
   $('btn-plantel').addEventListener('click', dialogoPlantel);
@@ -1989,7 +2448,7 @@ function conectarEventos() {
   });
 
   document.body.addEventListener('click', (ev) => {
-    const b = ev.target.closest('.ir');
+    const b = ev.target.closest('.ir[data-t]');
     if (b) Video.saltar(Number(b.dataset.t));
   });
 

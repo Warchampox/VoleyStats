@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="estilos.css?v=8">
+  <link rel="stylesheet" href="estilos.css?v=10">
 </head>
 <body>
   <header class="cabecera">
@@ -15,6 +15,10 @@
     <div class="separador"></div>
     <button class="partido-info" id="partido-info" title="Datos del partido"></button>
     <div class="scouteando"><span class="etiqueta">Scouteando</span><span id="scouteando"></span></div>
+    <div class="selector modo" id="selector-modo">
+      <button data-modo="captura" class="activo">Captura</button>
+      <button data-modo="stats">Estadísticas</button>
+    </div>
     <div class="relleno"></div>
     <div class="guardado" id="guardado"></div>
     <button class="btn" id="btn-partidos">Partidos</button>
@@ -75,7 +79,16 @@
         <span id="lt-duracion">0:00</span>
       </div>
 
-      <div class="listas">
+      <div class="panel clips solo-stats" id="panel-clips">
+        <div class="panel-cab">
+          <span class="etiqueta fuerte" id="clips-titulo">Clips</span>
+          <span class="clips-aviso" id="clips-aviso"></span>
+          <span class="etiqueta" id="clips-cuenta"></span>
+        </div>
+        <div class="lista" id="clips-lista"></div>
+      </div>
+
+      <div class="listas solo-captura">
         <div class="panel">
           <div class="panel-cab">
             <span class="etiqueta fuerte" id="rally-titulo">Rally · acciones</span>
@@ -95,7 +108,16 @@
     </section>
 
     <section class="col-der">
-      <div class="panel marcador">
+      <div class="stats solo-stats" id="stats">
+        <div class="panel alcance" id="stats-alcance"></div>
+        <div class="panel" id="stats-filtros"></div>
+        <div class="panel vistas">
+          <div class="panel-cab"><div class="selector" id="stats-tabs"></div></div>
+          <div class="vista-contenido" id="stats-contenido"></div>
+        </div>
+      </div>
+
+      <div class="panel marcador solo-captura">
         <div class="marcador-izq">
           <div class="tanteo" id="tanteo"></div>
           <div class="sub-marcador" id="sub-marcador"></div>
@@ -106,11 +128,11 @@
         </div>
       </div>
 
-      <div class="panel estado" id="estado"></div>
+      <div class="panel estado solo-captura" id="estado"></div>
 
-      <div class="panel jugadores" id="jugadores"></div>
+      <div class="panel jugadores solo-captura" id="jugadores"></div>
 
-      <div class="panel cancha-panel">
+      <div class="panel cancha-panel solo-captura">
         <div class="panel-cab">
           <span class="etiqueta fuerte" id="cancha-titulo">Cancha</span>
           <div class="selector" id="selector-vista">
@@ -128,6 +150,6 @@
 
   <div class="modal" id="modal" hidden></div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

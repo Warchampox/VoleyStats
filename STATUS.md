@@ -94,4 +94,22 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   recepción o ataque del rally en pantalla; otro clic en el mismo lo quita (deshacible).
   Solo recepción y ataque llevan jugador (decisión de Martín).
 
-**Siguiente paso:** anotar un set real y ajustar las teclas; luego fase 5 (estadísticas y filtros).
+### Estadísticas (fase 5)
+
+- Selector «Captura | Estadísticas» en el header. En Estadísticas el video sigue a la
+  izquierda con la lista de clips; a la derecha: alcance, filtros y 4 vistas.
+- Alcance: el partido abierto o varios partidos con el mismo equipo scouteado (por nombre),
+  elegidos en «Elegir partidos…». Un clip de otro partido abre ese partido y carga su video.
+- Vistas: Armador (zona de ataque por rotación y por calidad de pase, tipo de armada,
+  puntos de armada en la cancha), Ataque (por zona: calle/diago/d. corta sobre remates,
+  toques, punto, error+bloqueo, eficacia; trayectorias o mapa de calor de impactos),
+  Side-out (por rotación y por pase, con punto en el 1er ataque) y Recepción
+  (distribución, KPIs, por jugador y por rotación).
+- Filtros combinables (OR dentro de cada filtro, AND entre filtros): set, rotación, pase,
+  fase, armada, zona, golpe, resultado, jugador. Clic en celdas/filas fija filtros.
+  Panel plegable: muestra solo los activos.
+- Los clips parten 2 s antes de la recepción (side-out) o de la armada.
+- Estado de estadísticas en memoria (`stats`), no se guarda.
+
+**Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
+(modo rápido, CSV, estadísticas por jugador según uso).
