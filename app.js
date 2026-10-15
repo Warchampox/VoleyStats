@@ -2537,6 +2537,7 @@ function dialogoPartido({ nuevo, cancelable }) {
       : `<input class="campo" value="${esc(nombre(datos.scouteado))}" disabled>`) +
     `</label></div>` +
     `<div class="acciones">` +
+    (nuevo ? `<button type="button" class="btn izq" id="d-importar-nuevo" title="Abrir un partido desde un archivo JSON exportado">Importar partido…</button>` : '') +
     (cancelable ? `<button type="button" class="btn" id="d-cancelar">Cancelar</button>` : '') +
     `<button type="submit" class="btn principal">${nuevo ? 'Crear partido' : 'Guardar'}</button>` +
     `</div></form>`,
@@ -2544,6 +2545,7 @@ function dialogoPartido({ nuevo, cancelable }) {
   );
 
   if (cancelable) $('d-cancelar').addEventListener('click', cerrarModal);
+  if (nuevo) $('d-importar-nuevo').addEventListener('click', () => $('input-importar').click());
 
   $('form-partido').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -2913,6 +2915,7 @@ function conectarEventos() {
     if (!$('jug-popover').hidden && !ev.target.closest('.jug-menu')) alternarMenuJugador(false);
   });
   $('btn-exportar').addEventListener('click', () => { if (partido()) exportarPartido(almacen.actual); });
+  $('btn-importar').addEventListener('click', () => $('input-importar').click());
   $('input-importar').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
     ev.target.value = '';

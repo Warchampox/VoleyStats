@@ -659,3 +659,9 @@ body.modo-stats .solo-captura { display: none !important; }
 
 .tabla .grupo-col { text-align: center; color: var(--texto-2); font-weight: 500; border-bottom: 1px solid var(--borde-control); }
 .tabla .sep { border-left: 1px solid var(--borde-control); }
+
+/* Header: si falta ancho, el nombre del partido se corta antes que los botones */
+.cabecera > * { flex-shrink: 0; }
+.cabecera .partido-info { flex-shrink: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cabecera .guardado { flex-shrink: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cabecera .relleno { flex-shrink: 1; }

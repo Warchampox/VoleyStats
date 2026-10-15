@@ -229,5 +229,14 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   cobertura; G → 3 / 4 / 5 con el ganador correcto; deshacer paso a paso.
 - `?v=18`.
 
+### Importar más visible (2026-10-15)
+
+- Antes «Importar JSON…» solo estaba dentro del menú Partidos, y en un navegador sin partidos
+  la app abría «Partido nuevo» sin forma de importar (quien recibe un archivo no podía abrirlo).
+- Ahora: botón «Importar JSON» en el header (junto a «Exportar JSON») y «Importar partido…»
+  en la ventana «Partido nuevo». Probado importando sin partidos guardados.
+- Header: si falta ancho, se cortan con «…» el nombre del partido y el estado de guardado,
+  nunca los botones (probado a 1280 px con nombres largos). `?v=19`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).
