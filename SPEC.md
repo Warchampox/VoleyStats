@@ -47,26 +47,36 @@ Se anota con un híbrido: teclas para elegir el tipo de acción o calificar, y c
 ### Rally típico (modo video, con pausa)
 
 1. **Recepción:** una tecla con la calificación. El primer contacto tras el saque es recepción automáticamente.
-2. **Armada:** una tecla con el tipo de armada, luego un click donde cae la armada. Eso define la zona de ataque.
+2. **Armada:** una tecla con el tipo de armada, luego un click donde cae la armada. Eso define la zona de ataque. Antes, un click opcional marca dónde queda el pase (recepción o defensa).
 3. **Golpe:** tecla modificadora solo si no fue remate, luego un click donde pega o cae el balón.
 4. **Resultado:** una tecla. La app dibuja el símbolo correspondiente.
 
-Si el rally sigue tras un "defendido", la siguiente secuencia se asume como contraataque. Recovery se marca con tecla.
+Si el rally sigue tras un "defendido", la siguiente secuencia se asume como contraataque; en contraataque, la defensa se puede calificar (opcional) con la misma escala. Tras un ataque propio "rejugado", la armada siguiente es **cobertura** (recovery), sin tecla.
 
-### Calificación (recepción, pase y saque)
+**Zona de ataque:** delantera según la banda donde cae la armada (Z4 / Z3 / Z2), sin importar la distancia a la red. Es de zaguero (Z5 / Z6 / Z1 según la banda) solo si la armada es pipe o se marca con la tecla de zaguero antes del click.
 
-Escala de 5 niveles: **#** perfecta · **+** buena · **!** regular · **-** mala · **=** error.
+**Cierre sin ataque:** al cerrar un rally sin otro ataque del equipo scouteado se puede indicar el motivo: ace (gana el que saca), error de saque (gana el que recibe) o punto de bloqueo del equipo scouteado.
+
+Si se aprieta una tecla de captura que no corresponde al paso actual, la app lo avisa en el panel.
+
+### Calificación (recepción y defensa)
+
+Escala de 5 niveles: **#** perfecta · **+** buena · **!** regular · **-** mala · **=** error. El saque no se califica: se registran el ace y el error de saque al cerrar el rally.
 
 ### Tipos de armada
 
-Cada tipo tiene un color en la cancha. Son cuatro:
+Cada tipo tiene un color en la cancha:
 
 | Tipo | Uso habitual |
 | --- | --- |
 | Primer tiempo | Centrales |
 | Pelota alta | Extremos |
 | Rápida | Extremos |
-| Pipe | Zaguero |
+| Pipe | Zaguero (siempre ataque de zaguero) |
+| Emergencia | La arma otro jugador tras un mal pase o defensa |
+| Segunda del armador | El armador ataca de segunda (finta o remate): un click donde toca y otro donde cae |
+
+Emergencia y segunda no cuentan en la distribución del armador: van aparte.
 
 ### Dirección y tipo de golpe
 
@@ -114,8 +124,10 @@ Un partido contiene sets, cada set contiene rallies y cada rally contiene accion
 
 - **Partido:** equipos, fecha, fuente de video (link de YouTube o nombre del archivo local), equipo o equipos scouteados, plantel por equipo.
 - **Set:** número, rotación inicial de cada equipo, marcador final.
-- **Rally:** equipo que saca, marcador antes del rally, rotación del armador (P1 a P6), ganador, segundo de video de inicio.
-- **Acción:** tipo (saque, recepción, contra, recovery, armada, ataque), equipo, jugador opcional, calificación, tipo de armada, coordenadas, tipo de golpe, resultado, segundo de video.
+- **Rally:** equipo que saca, marcador antes del rally, ganador, segundo de video de inicio y, si se cerró con motivo, `motivo` (ace, error de saque, bloqueo). La rotación del armador se deriva (rotación inicial del set, side-outs y correcciones).
+- **Acción:** tipo (saque, recepción, defensa, armada, ataque, pasa libre, recibe libre; datos viejos pueden traer recovery), equipo, jugador opcional (recepción, defensa, ataque), calificación (recepción y defensa), posición del pase opcional (`punto` en recepción y defensa), tipo de armada, `zaguero` si se marcó con la tecla, coordenadas, tipo de golpe, resultado, segundo de video.
+
+La fase de cada armada (recepción, contra, cobertura, libre) no se guarda: se deduce de las acciones anteriores. Los campos nuevos son opcionales, así que los partidos y archivos viejos se leen sin migración y se reclasifican solos.
 
 Ejemplo de un rally:
 
@@ -144,12 +156,13 @@ La salida central es la distribución del armador según la rotación y la calid
 
 | Vista | Qué responde |
 | --- | --- |
-| Distribución del armador | Dónde arma según rotación (P1 a P6) y calidad de recepción |
+| Distribución del armador | Dónde arma según rotación (P1 a P6) y calidad del pase (recepción y defensa), sin emergencia ni segunda; aparte, emergencias y segunda del armador por rotación |
 | Mapa de ataque por zona | Hacia dónde ataca cada zona: diago, diago corta, calle, toques; mapa de calor de impactos |
 | Side-out por rotación | En qué rotaciones el equipo sufre o rinde al recibir |
 | Eficiencia de recepción | Distribución de calificaciones de recepción del equipo |
+| Saque y bloqueo | Aces y errores de saque de cada equipo, y puntos de bloqueo del equipo scouteado, por set y por rotación |
 
-**Filtros combinables:** set, rotación, calidad de pase, tipo de armada, zona, tipo de golpe, resultado, recepción vs. contra vs. recovery.
+**Filtros combinables:** set, rotación, calidad de pase (recepción o defensa), tipo de armada, zona, tipo de golpe, resultado, fase (recepción, contra, cobertura, libre), jugador.
 
 **Lista de clips:** cada filtro produce una lista de jugadas; un click salta al segundo exacto del video.
 
@@ -173,5 +186,5 @@ Primero se valida el flujo de captura con un video real, porque si anotar es inc
 - [ ] Nombre del sitio e identidad visual.
 - [ ] Asignación exacta de teclas (se define con el prototipo).
 - [ ] Umbral de ángulo entre diago, diago corta y calle.
-- [ ] ¿El saque se califica siempre o solo cuando interesa?
+- [x] ¿El saque se califica siempre o solo cuando interesa? → No se califica. Se registran ace y error de saque al cerrar el rally (G → 3 / 4).
 - [ ] ¿Se registra la armada del equipo scouteado también en contraataque, o solo en side-out?

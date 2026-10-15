@@ -193,5 +193,41 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   sin jugadores asignados → siempre 2 páginas A4, sin tablas cortadas.
 - SPEC.md: «Resumen en PDF» en Estadísticas y salidas. `?v=17`.
 
+### Flujo de captura ampliado (2026-10-15, tras simular partidos punto a punto)
+
+- **Posición del pase (opcional):** en «Tipo de armada», si la acción anterior es recepción o
+  defensa sin `punto`, un clic lo guarda en esa acción. Se dibuja como cuadrado hueco con
+  línea fina punteada hasta la armada. Una tecla de armada sin clic lo salta.
+- **Defensa calificada (opcional):** en «Tipo de armada», si la acción anterior no es recepción
+  ni defensa, 1–5 crean `{ tipo: 'defensa', calif }`. Su calificación es el «pase» de la armada
+  siguiente (`contactoDeArmada()`): filtro Pase y tabla «por calidad de pase (recepción y
+  defensa)» la incluyen. Se le puede asignar jugador.
+- **Armadas nuevas:** `emergencia` (A, #009E73) y `segunda` (S, #0072B2; clic donde toca el
+  armador y clic donde cae). `ARMADAS[x].especial`: la vista Armador las excluye de la
+  distribución y muestra aparte «Emergencias: n (x%)» y la tabla «Segunda del armador por
+  rotación» (segundas, armadas con pase # +, % de segundas con pase # + sobre esas armadas).
+- **Cobertura automática:** la armada tras un ataque propio «rejugado» es fase `recovery`,
+  mostrada como «Cobertura». Se eliminó la tecla T (queda libre). Las acciones `recovery`
+  viejas siguen valiendo. Una defensa calificada entre medio no cambia la fase.
+- **Zona de ataque:** delantera por banda (Z4/Z3/Z2) sin importar la distancia a la red.
+  Zaguero (Z5/Z6/Z1 por banda) solo si es pipe o se marcó Z en el clic de armada
+  (`armada.zaguero = true`; Z de nuevo lo quita, Esc vuelve al tipo). Los datos viejos se
+  reclasifican solos (probado: una alta a 6,6 m del fondo pasa de Z5 a Z4).
+- **Cierre con motivo (G):** 1 / 2 ganador genérico; 3 ace (gana el que saca), 4 error de saque
+  (gana el que recibe), 5 punto de bloqueo del scouteado → `rally.motivo`. Funciona con rally
+  abierto y como punto sin jugada (también en el primer rally del set). Vista nueva
+  «Saque y bloqueo» por set y rotación; una recepción «=» cuenta como ace del que saca.
+- **Usa el bloque:** ya estaba hecho (tecla 7, commit 55a535e).
+- **Tecla que no aplica:** aviso en el panel «Esa tecla no aplica ahora (X): estás en «…»».
+  Se borra en cuanto se registra una acción válida. Teclas que no son de captura (como T) no avisan.
+- Panel del paso de armada en 5 columnas (`c5`): 9–10 teclas en 2 filas, sigue en 222 px.
+- Datos: todos los campos nuevos son opcionales → `VERSION_DATOS` sigue en 1, sin migración.
+  Probado: importar un JSON viejo con acción `recovery` funciona.
+- Resumen PDF: página 1 agrega emergencias y la tabla de segunda; sigue en 2 páginas A4.
+- Probado en el navegador con los rallies pedidos: emergencia a 3,5 m por la banda izquierda
+  → Z4; pipe a 1,5 m → Z6; alta con Z por la banda derecha → Z1; armada tras rejugado →
+  cobertura; G → 3 / 4 / 5 con el ganador correcto; deshacer paso a paso.
+- `?v=18`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

@@ -20,14 +20,31 @@ const TECLAS = {
   nuevoRally: 'enter',
   cancelar: 'escape',
   cerrarSinAtaque: 'g',
-  recovery: 't',
+  // 't' queda libre: la cobertura (recovery) se deduce sola tras un «rejugado»
   pasaLibre: 'f',
   recibeLibre: 'b',
+  zaguero: 'z', // modificador en el clic de armada
+  // 1–5: recepción, y defensa (en contraataque) en el paso de armada
   calificacion: { '1': '#', '2': '+', '3': '!', '4': '-', '5': '=' },
-  armada: { q: 'primer', w: 'alta', e: 'rapida', r: 'pipe' },
+  armada: { q: 'primer', w: 'alta', e: 'rapida', r: 'pipe', a: 'emergencia', s: 'segunda' },
   golpe: { c: 'corto', v: 'largo' },
   resultado: { '1': 'punto', '2': 'error', '3': 'bloqueado', '4': 'pinchado', '5': 'rejugado', '6': 'defendido', '7': 'usaBloque' },
   ganador: { '1': 'propio', '2': 'rival' },
+  // Cierre con G: 1/2 ganador genérico; 3–5 con motivo (el ganador se deduce)
+  cierre: { '1': { gana: 'propio' }, '2': { gana: 'rival' }, '3': { motivo: 'ace' }, '4': { motivo: 'errorSaque' }, '5': { motivo: 'bloqueo' } },
+};
+
+// Teclas que pertenecen a la captura: si no aplican al paso actual, se avisa
+const TECLAS_CAPTURA = new Set([
+  TECLAS.nuevoRally, TECLAS.cancelar, TECLAS.cerrarSinAtaque, TECLAS.pasaLibre, TECLAS.recibeLibre, TECLAS.zaguero,
+  ...Object.keys(TECLAS.calificacion), ...Object.keys(TECLAS.armada), ...Object.keys(TECLAS.golpe),
+  ...Object.keys(TECLAS.resultado), ...Object.keys(TECLAS.cierre),
+]);
+
+const MOTIVOS = {
+  ace: { nombre: 'Ace' },
+  errorSaque: { nombre: 'Error de saque' },
+  bloqueo: { nombre: 'Punto de bloqueo' },
 };
 
 const SALTO_SEGUNDOS = 3;
@@ -51,6 +68,9 @@ const ARMADAS = {
   alta: { nombre: 'Pelota alta', corto: 'Alta', variable: '--armada-alta' },
   rapida: { nombre: 'Rápida', corto: 'Rápida', variable: '--armada-rapida' },
   pipe: { nombre: 'Pipe', corto: 'Pipe', variable: '--armada-pipe' },
+  // No las hace el armador en una jugada normal: van aparte en la distribución
+  emergencia: { nombre: 'Emergencia', corto: 'Emerg.', variable: '--armada-emergencia', especial: true },
+  segunda: { nombre: 'Segunda del armador', corto: '2da', variable: '--armada-segunda', especial: true },
 };
 
 const GOLPES = {
@@ -149,7 +169,7 @@ const POSICIONES = {
 };
 
 // Acciones a las que se les puede asignar jugador
-const ACCIONES_CON_JUGADOR = ['recepcion', 'ataque'];
+const ACCIONES_CON_JUGADOR = ['recepcion', 'defensa', 'ataque'];
 const VERSION_DATOS = 1;
 
 let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
@@ -316,13 +336,27 @@ function secuencias(r) {
   return res;
 }
 
+// Fase de una armada según lo que pasó antes en el rally:
+// tras recepción → 'recepcion'; tras un ataque propio «rejugado» → 'recovery'
+// (se muestra como «Cobertura»); tras recibir libre → 'libre'; si no, 'contra'.
+// Una defensa calificada no cambia la fase: se mira lo que hubo antes de ella.
+// Las acciones 'recovery' de datos viejos (tecla T, ya eliminada) siguen valiendo.
 function faseArmada(r, armada) {
-  const i = r.acciones.indexOf(armada);
-  const previa = r.acciones[i - 1];
-  if (previa && previa.tipo === 'recepcion') return 'recepcion';
-  if (previa && previa.tipo === 'recovery') return 'recovery';
-  if (previa && previa.tipo === 'recibeLibre') return 'libre';
+  let i = r.acciones.indexOf(armada) - 1;
+  if (r.acciones[i] && r.acciones[i].tipo === 'recepcion') return 'recepcion';
+  while (i >= 0 && r.acciones[i].tipo === 'defensa') i--;
+  const previa = r.acciones[i];
+  if (!previa) return 'contra';
+  if (previa.tipo === 'recovery') return 'recovery';
+  if (previa.tipo === 'recibeLibre') return 'libre';
+  if (previa.tipo === 'ataque' && previa.resultado === 'rejugado') return 'recovery';
   return 'contra';
+}
+
+// Primer contacto que da el pase de una armada: la recepción o la defensa justo antes
+function contactoDeArmada(r, armada) {
+  const previa = r.acciones[r.acciones.indexOf(armada) - 1];
+  return previa && (previa.tipo === 'recepcion' || previa.tipo === 'defensa') ? previa : null;
 }
 
 // =====================================================================
@@ -346,8 +380,14 @@ function dentro(p) {
   return x >= CANCHA.x0 && x <= CANCHA.x1 && y >= CANCHA.y0 && y <= CANCHA.y1;
 }
 
+// Zona de ataque según la banda donde cae la armada. Es delantera (Z4/Z3/Z2)
+// salvo que sea de zaguero: la pipe siempre, o una armada marcada con la tecla Z
+// (Z5/Z6/Z1). La distancia a la red no cuenta. Se calcula, nunca se guarda.
+function esZaguero(armada) { return armada.armada === 'pipe' || !!armada.zaguero; }
+
 function zonaAtaque(armada) {
-  return aMetros(armada.punto)[0] <= CANCHA.red ? 'Z' + zonaPunto(armada.punto) : null;
+  const f = tercio(aMetros(armada.punto)[1]);
+  return 'Z' + (esZaguero(armada) ? [5, 6, 1][f] : [4, 3, 2][f]);
 }
 
 function direccion(armada, ataque) {
@@ -567,8 +607,9 @@ const ui = {
 // Selecciones en curso que todavía no son una acción guardada.
 let pendiente = nuevoPendiente();
 function nuevoPendiente() {
-  // puntoPara: punto directo pendiente de saber quién saca (primer rally del set)
-  return { armada: null, golpe: 'remate', cerrar: false, elegirSaque: null, elegirRotacion: null, puntoPara: null };
+  // puntoPara: punto directo { gana?, motivo? } pendiente de saber quién saca (primer rally del set)
+  // zaguero: modificador Z del clic de armada
+  return { armada: null, golpe: 'remate', zaguero: false, cerrar: false, elegirSaque: null, elegirRotacion: null, puntoPara: null };
 }
 
 const historial = [];
@@ -576,6 +617,7 @@ const MAX_HISTORIAL = 300;
 
 function mutar(etiqueta, fn) {
   const p = partido();
+  ui.aviso = null; // una acción válida reemplaza cualquier aviso pendiente
   historial.push({ id: p.id, json: JSON.stringify(p), pendiente: { ...pendiente }, etiqueta });
   if (historial.length > MAX_HISTORIAL) historial.shift();
   fn(p);
@@ -645,7 +687,18 @@ function estado() {
   return { modo, p, set, r, ultima };
 }
 
-function esModoClic(modo) { return modo === 'armadaClic' || modo === 'golpe'; }
+// En «Tipo de armada», si la acción anterior es una recepción o defensa sin
+// posición, un clic en la cancha marca dónde queda el pase (opcional).
+function puedeMarcarPase(e) {
+  return e.modo === 'armadaTipo' && ['recepcion', 'defensa'].includes(e.ultima.tipo) && !e.ultima.punto;
+}
+
+// En contraataque (la acción anterior no es recepción ni defensa) 1–5 califica la defensa
+function puedeCalificarDefensa(e) {
+  return e.modo === 'armadaTipo' && !['recepcion', 'defensa'].includes(e.ultima.tipo);
+}
+
+function esModoClic(e) { return e.modo === 'armadaClic' || e.modo === 'golpe' || puedeMarcarPase(e); }
 
 // "Pausar al marcar": la primera entrada de captura del rally pausa el video.
 function alMarcar(set) {
@@ -656,30 +709,51 @@ function alMarcar(set) {
 
 function tiempoActual() { return redondear(Video.tiempo(), 1); }
 
-// Abre el rally y, si había un punto directo pendiente, lo cierra de inmediato
-function abrirRallyPendiente(set, saca, t) {
-  const para = pendiente.puntoPara;
-  abrirRally(set, saca, t);
-  if (para) cerrarRally(set, set.rallies[set.rallies.length - 1], para);
+// Ganador de un cierre con motivo: el ace lo gana quien saca, el error de saque
+// quien recibe y el punto de bloqueo el equipo scouteado.
+function ganadorPorMotivo(motivo, saca, scout) {
+  if (motivo === 'ace') return saca;
+  if (motivo === 'errorSaque') return otro(saca);
+  return scout;
 }
 
-// Punto sin jugada: un rally con solo el saque y su ganador. Marcador, saque
-// y rotación se siguen derivando de los rallies como siempre.
-function puntoDirecto(gana) {
+function etiquetaPunto(gana, motivo) {
+  return motivo ? `${MOTIVOS[motivo].nombre} · gana ${nombre(gana)}` : `Punto ${nombre(gana)}`;
+}
+
+// Abre el rally y, si había un punto directo pendiente, lo cierra de inmediato
+function abrirRallyPendiente(set, saca, t, scout) {
+  const para = pendiente.puntoPara;
+  abrirRally(set, saca, t);
+  if (!para) return;
+  // Compatibilidad: historiales de deshacer anteriores guardaban solo el equipo
+  const { gana, motivo } = typeof para === 'string' ? { gana: para, motivo: null } : para;
+  cerrarRally(set, set.rallies[set.rallies.length - 1], gana || ganadorPorMotivo(motivo, saca, scout), motivo);
+}
+
+// Punto sin jugada: un rally con solo el saque y su ganador (y motivo, si se dio).
+// Marcador, saque y rotación se siguen derivando de los rallies como siempre.
+function puntoDirecto(gana, motivo = null) {
   const e = estado();
-  const { modo, set, r } = e;
+  const { modo, p, set, r } = e;
   if (modo === 'sinPartido' || ui.modo === 'stats') return;
   if (['elegirSaque', 'elegirRotacion'].includes(modo)) { avisar('Primero termina de abrir el set'); return; }
   if (modo === 'setTerminado' || modo === 'partidoTerminado') { avisar('El set ya terminó: Enter abre el siguiente'); return; }
   const t = tiempoActual();
   if (r) {
-    mutar(`Punto ${nombre(gana)}`, () => cerrarRally(set, r, gana));
+    const g = gana || ganadorPorMotivo(motivo, r.saca, p.scouteado);
+    mutar(etiquetaPunto(g, motivo), () => cerrarRally(set, r, g, motivo));
   } else if (!set.rallies.length && !set.primerSaque) {
-    mutar(`Punto ${nombre(gana)}`, () => { pendiente.elegirSaque = { t }; pendiente.puntoPara = gana; });
+    mutar(motivo ? MOTIVOS[motivo].nombre : `Punto ${nombre(gana)}`, () => {
+      pendiente.elegirSaque = { t };
+      pendiente.puntoPara = { gana, motivo };
+    });
   } else {
-    mutar(`Punto ${nombre(gana)}`, () => {
-      abrirRally(set, sacaSiguiente(set), t);
-      cerrarRally(set, set.rallies[set.rallies.length - 1], gana);
+    const saca = sacaSiguiente(set);
+    const g = gana || ganadorPorMotivo(motivo, saca, p.scouteado);
+    mutar(etiquetaPunto(g, motivo), () => {
+      abrirRally(set, saca, t);
+      cerrarRally(set, set.rallies[set.rallies.length - 1], g, motivo);
     });
   }
 }
@@ -695,17 +769,29 @@ function abrirRally(set, saca, t) {
   pendiente = nuevoPendiente();
 }
 
-function cerrarRally(set, r, gana) {
+function cerrarRally(set, r, gana, motivo = null) {
   r.gana = gana;
+  if (motivo) r.motivo = motivo;
   const m = marcadorTras(set);
   if (setTerminado(set, m)) set.final = m;
   pendiente = nuevoPendiente();
 }
 
+// Si la tecla es de captura pero no corresponde al paso actual, se avisa en el panel
 function teclaCaptura(k) {
+  if (ui.modo === 'stats' || !partido()) return false;
+  if (teclaCapturaPaso(k)) return true;
+  if (TECLAS_CAPTURA.has(k)) {
+    avisar(`Esa tecla no aplica ahora (${nombreTecla(k)}): estás en «${contenidoEstado(estado()).titulo}».`);
+    return true;
+  }
+  return false;
+}
+
+function teclaCapturaPaso(k) {
   const e = estado();
   const { modo, p, set, r } = e;
-  if (modo === 'sinPartido' || ui.modo === 'stats') return false;
+  if (modo === 'sinPartido') return false;
 
   if (k === TECLAS.nuevoRally) {
     if (modo === 'esperando') {
@@ -733,7 +819,7 @@ function teclaCaptura(k) {
         const t = pendiente.elegirSaque.t;
         if (set.rotInicial[p.scouteado]) {
           set.primerSaque = saca;
-          abrirRallyPendiente(set, saca, t);
+          abrirRallyPendiente(set, saca, t, p.scouteado);
         } else {
           pendiente.elegirSaque = null;
           pendiente.elegirRotacion = { t, saca };
@@ -752,7 +838,7 @@ function teclaCaptura(k) {
         const { t, saca } = pendiente.elegirRotacion;
         set.rotInicial[p.scouteado] = rot;
         set.primerSaque = saca;
-        abrirRallyPendiente(set, saca, t);
+        abrirRallyPendiente(set, saca, t, p.scouteado);
       });
       return true;
     }
@@ -766,11 +852,11 @@ function teclaCaptura(k) {
   }
 
   if (modo === 'cerrar') {
-    if (TECLAS.ganador[k]) {
-      const gana = TECLAS.ganador[k];
+    const cierre = TECLAS.cierre[k];
+    if (cierre) {
       if (r) alMarcar(set);
       pendiente.cerrar = false;
-      puntoDirecto(gana);
+      puntoDirecto(cierre.gana || null, cierre.motivo || null);
       return true;
     }
     if (k === TECLAS.cancelar) { mutar('Cancelar', () => { pendiente.cerrar = false; }); return true; }
@@ -781,7 +867,7 @@ function teclaCaptura(k) {
 
   if (k === TECLAS.cerrarSinAtaque && ['recepcion', 'armadaTipo', 'armadaClic'].includes(modo)) {
     alMarcar(set);
-    mutar('Cerrar rally', () => { pendiente.cerrar = true; pendiente.armada = null; });
+    mutar('Cerrar rally', () => { pendiente.cerrar = true; pendiente.armada = null; pendiente.zaguero = false; });
     return true;
   }
 
@@ -796,10 +882,24 @@ function teclaCaptura(k) {
     return true;
   }
 
+  if (puedeCalificarDefensa(e) && TECLAS.calificacion[k]) {
+    const calif = TECLAS.calificacion[k];
+    const t = tiempoActual();
+    alMarcar(set);
+    mutar(`Defensa ${calif}`, () => { r.acciones.push({ tipo: 'defensa', equipo: p.scouteado, calif, t }); });
+    return true;
+  }
+
   if ((modo === 'armadaTipo' || modo === 'armadaClic') && TECLAS.armada[k]) {
     const tipo = TECLAS.armada[k];
     alMarcar(set);
     mutar(`Tipo ${ARMADAS[tipo].corto.toLowerCase()}`, () => { pendiente.armada = tipo; });
+    return true;
+  }
+
+  if (modo === 'armadaClic' && k === TECLAS.zaguero) {
+    if (pendiente.armada === 'pipe') { avisar('La pipe ya es ataque de zaguero.'); return true; }
+    mutar(pendiente.zaguero ? 'Quitar zaguero' : 'Zaguero', () => { pendiente.zaguero = !pendiente.zaguero; });
     return true;
   }
 
@@ -818,16 +918,8 @@ function teclaCaptura(k) {
     return true;
   }
 
-  if (modo === 'armadaTipo' && k === TECLAS.recovery) {
-    if (e.ultima.tipo === 'recovery') return true;
-    const t = tiempoActual();
-    alMarcar(set);
-    mutar('Recovery', () => { r.acciones.push({ tipo: 'recovery', equipo: p.scouteado, t }); });
-    return true;
-  }
-
   if (modo === 'armadaClic' && k === TECLAS.cancelar) {
-    mutar('Cambiar tipo', () => { pendiente.armada = null; });
+    mutar('Cambiar tipo', () => { pendiente.armada = null; pendiente.zaguero = false; });
     return true;
   }
 
@@ -867,14 +959,20 @@ function teclaCaptura(k) {
 function clicCancha(punto) {
   const e = estado();
   const { modo, p, set, r } = e;
-  if (!esModoClic(modo)) return;
+  if (!esModoClic(e)) return;
   const t = tiempoActual();
   alMarcar(set);
-  if (modo === 'armadaClic') {
+  if (puedeMarcarPase(e)) {
+    mutar('Posición del pase', () => { e.ultima.punto = punto; });
+  } else if (modo === 'armadaClic') {
     const tipo = pendiente.armada;
+    const zaguero = pendiente.zaguero && tipo !== 'pipe';
     mutar(`Armada ${ARMADAS[tipo].corto.toLowerCase()}`, () => {
-      r.acciones.push({ tipo: 'armada', equipo: p.scouteado, armada: tipo, punto, t });
+      const armada = { tipo: 'armada', equipo: p.scouteado, armada: tipo, punto, t };
+      if (zaguero) armada.zaguero = true;
+      r.acciones.push(armada);
       pendiente.armada = null;
+      pendiente.zaguero = false;
       pendiente.golpe = 'remate';
     });
   } else {
@@ -1002,15 +1100,20 @@ function celdasPasos(e) {
     if (ult && cierraSecuencia(ult)) { seq = []; indice = seqs.length; }
   }
   const rec = seq.find((a) => a.tipo === 'recepcion');
+  const def = seq.find((a) => a.tipo === 'defensa');
   const recov = seq.find((a) => a.tipo === 'recovery');
+  const previa = seqs[indice - 1];
+  const tras = previa && previa[previa.length - 1];
+  const cobertura = recov || (tras && tras.tipo === 'ataque' && tras.resultado === 'rejugado');
   const libreRec = seq.find((a) => a.tipo === 'recibeLibre');
   const librePasa = seq.find((a) => a.tipo === 'pasaLibre');
   const arm = seq.find((a) => a.tipo === 'armada');
   const atq = seq.find((a) => a.tipo === 'ataque');
   const scout = (e.p || partido()).scouteado;
 
-  if (rec) c[0] = { valor: '✓ ' + rec.calif };
-  else if (recov) c[0] = { valor: 'Recovery' };
+  if (rec) c[0] = { valor: '✓ ' + rec.calif + (rec.punto ? ' · pase' : '') };
+  else if (def) c[0] = { valor: `✓ Def. ${def.calif}${def.punto ? ' · pase' : ''}` };
+  else if (cobertura) c[0] = { valor: 'Cobertura' };
   else if (libreRec) c[0] = { valor: 'Libre' };
   else if (r.saca === scout || indice > 0) c[0] = { valor: 'Contra' };
 
@@ -1025,7 +1128,7 @@ function celdasPasos(e) {
   const m = e.modo;
   if (m === 'recepcion') c[0] = { valor: 'en curso', actual: true };
   if (m === 'armadaTipo') c[1] = { valor: 'tipo', actual: true };
-  if (m === 'armadaClic') c[1] = { valor: `${ARMADAS[pendiente.armada].corto} · clic`, actual: true };
+  if (m === 'armadaClic') c[1] = { valor: `${ARMADAS[pendiente.armada].corto}${pendiente.zaguero ? ' · zag.' : ''} · clic`, actual: true };
   if (m === 'golpe') c[2] = { valor: pendiente.golpe === 'remate' ? 'clic' : `${GOLPES[pendiente.golpe].corto} · clic`, actual: true };
   if (m === 'resultado') c[3] = { valor: 'tecla', actual: true };
   return c;
@@ -1065,7 +1168,7 @@ function contenidoEstado(e) {
       const n = set.rallies.length;
       const giro = rot && fueSideOut(ultimo, p.scouteado) ? `Side-out: el armador pasa a P${rot}. ` : '';
       return {
-        tipo: 'tecla', titulo: `Rally ${n} cerrado · punto ${nombre(ultimo.gana)}`,
+        tipo: 'tecla', titulo: `Rally ${n} cerrado · ${ultimo.motivo ? MOTIVOS[ultimo.motivo].nombre.toLowerCase() + ' · ' : ''}punto ${nombre(ultimo.gana)}`,
         contexto: `${giro}Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
         teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c4',
       };
@@ -1107,12 +1210,23 @@ function contenidoEstado(e) {
       };
     }
 
-    case 'cerrar':
+    case 'cerrar': {
+      const saca = e.r ? e.r.saca : sacaSiguiente(e.set);
       return {
         tipo: 'tecla', titulo: e.r ? '¿Quién gana el rally?' : '¿Quién gana el punto?',
-        contexto: e.r ? `Cierra el rally sin registrar otro ataque del ${scoutNom}.` : 'Suma el punto sin registrar la jugada.',
-        teclas: [teclaItem('1', nombre('propio'), '', true), teclaItem('2', nombre('rival'), '', true), teclaItem('Esc', 'Cancelar')], cols: 'c3',
+        contexto: (e.r ? `Cierra el rally sin registrar otro ataque del ${scoutNom}.` : 'Suma el punto sin registrar la jugada.') +
+          ' 3–5 guardan el motivo.',
+        teclas: [
+          teclaItem('1', nombre('propio'), '', true),
+          teclaItem('2', nombre('rival'), '', true),
+          teclaItem('3', saca ? `Ace de ${nombre(saca)}` : 'Ace (gana el que saca)'),
+          teclaItem('4', saca ? `Error de saque de ${nombre(saca)}` : 'Error de saque'),
+          teclaItem('5', `Bloqueo del ${scoutNom}`),
+          teclaItem('Esc', 'Cancelar'),
+        ],
+        cols: 'c3',
       };
+    }
 
     case 'recepcion': {
       const saque = e.r.acciones[0];
@@ -1131,39 +1245,54 @@ function contenidoEstado(e) {
       const ult = e.ultima;
       let fase;
       if (ult.tipo === 'recepcion') fase = `Side-out tras recepción ${ult.calif}.`;
-      else if (ult.tipo === 'recovery') fase = 'Recovery.';
+      else if (ult.tipo === 'defensa') fase = `Defensa ${ult.calif}.`;
+      else if (ult.tipo === 'recovery') fase = 'Cobertura.';
       else if (ult.tipo === 'recibeLibre') fase = 'Balón libre recibido.';
-      else if (ult.tipo === 'pasaLibre') fase = `Pasó libre: la siguiente armada es contraataque.`;
+      else if (ult.tipo === 'pasaLibre') fase = 'Pasó libre: la siguiente armada es contraataque.';
       else if (ult.tipo === 'saque') fase = `Saca ${scoutNom}: la siguiente armada es contraataque.`;
+      else if (ult.resultado === 'rejugado') fase = 'Cobertura tras «rejugado».';
       else fase = `Contraataque tras «${RESULTADOS[ult.resultado].nombre.toLowerCase()}».`;
+      const pase = puedeMarcarPase(e);
+      const defensa = puedeCalificarDefensa(e);
+      const extra = pase ? 'Clic donde queda el pase (opcional).' : defensa ? '1–5 califica la defensa (opcional).' : '';
       return {
-        tipo: 'tecla', titulo: 'Tipo de armada',
-        contexto: `${fase} Después se marca en la cancha dónde cae.`,
+        tipo: pase ? 'tecla · clic opcional' : 'tecla', titulo: 'Tipo de armada',
+        contexto: `${fase} ${extra}`.trim(),
         teclas: [
-          ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), t === 'primer' ? '1er tiempo' : ARMADAS[t].corto, muestra(t))),
-          teclaItem(nombreTecla(TECLAS.recovery), 'Recovery'),
-          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe libre'),
+          ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), ARMADAS[t].corto, muestra(t))),
           teclaItem(nombreTecla(TECLAS.pasaLibre), 'Pasa libre'),
-          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar sin ataque'),
+          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe libre'),
+          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar'),
+          ...(defensa ? [teclaItem('1–5', 'Defensa')] : []),
         ],
-        cols: 'c4',
+        cols: 'c5',
       };
     }
 
     case 'armadaClic': {
-      const color = colorVar(ARMADAS[pendiente.armada].variable);
+      const tipo = pendiente.armada;
+      const color = colorVar(ARMADAS[tipo].variable);
+      const segunda = tipo === 'segunda';
+      const zag = tipo === 'pipe' ? 'pipe: siempre zaguero' : pendiente.zaguero ? 'ataque de zaguero (Z5/Z6/Z1)' : 'ataque delantero (Z4/Z3/Z2)';
       return {
-        tipo: 'clic en la cancha', icono: mira(color), titulo: 'Clic donde cae la armada',
-        contexto: `${ARMADAS[pendiente.armada].nombre} · lado ${scoutNom}. Define la zona de ataque.`,
-        teclas: [teclaItem('Esc', 'Cambiar tipo'), teclaItem('Ctrl+Z', deshacerTxt)], cols: 'c2',
+        tipo: 'clic en la cancha', icono: mira(color), titulo: segunda ? 'Clic donde toca el armador' : 'Clic donde cae la armada',
+        contexto: `${ARMADAS[tipo].nombre} · ${zag}. La banda define la zona.`,
+        teclas: [
+          teclaItem(nombreTecla(TECLAS.zaguero), 'Zaguero', '', tipo !== 'pipe' && pendiente.zaguero),
+          teclaItem('Esc', 'Cambiar tipo'),
+          teclaItem('Ctrl+Z', deshacerTxt),
+        ],
+        cols: 'c3',
       };
     }
 
     case 'golpe': {
       const g = pendiente.golpe;
+      const segunda = e.ultima.armada === 'segunda';
       return {
-        tipo: 'clic en la cancha', icono: mira(colorVar('--texto')), titulo: 'Clic donde pega el balón',
-        contexto: g === 'remate' ? 'Remate por defecto. Modificador antes del clic si fue toque.' : `${GOLPES[g].nombre}. Clic donde pega o cae el balón.`,
+        tipo: 'clic en la cancha', icono: mira(colorVar('--texto')), titulo: segunda ? 'Clic donde cae el balón' : 'Clic donde pega el balón',
+        contexto: (segunda ? 'Segunda del armador. ' : '') +
+          (g === 'remate' ? 'Remate por defecto. Modificador antes del clic si fue toque.' : `${GOLPES[g].nombre}. Clic donde pega o cae el balón.`),
         teclas: [
           teclaItem('—', 'Remate', '', g === 'remate'),
           ...Object.entries(TECLAS.golpe).map(([k, v]) => teclaItem(k.toUpperCase(), GOLPES[v].nombre, '', g === v)),
@@ -1202,7 +1331,9 @@ function textoJugador(num, p = partido()) {
   return [`#${num}`, j.nombre, j.pos && POSICIONES[j.pos].nombre].filter(Boolean).join(' · ');
 }
 
-// Última recepción o ataque del rally en pantalla: a ella se asigna el jugador
+const DESTINO_JUGADOR = { recepcion: 'Última recepción', defensa: 'Última defensa', ataque: 'Último ataque' };
+
+// Última recepción, defensa o ataque del rally en pantalla: a ella se asigna el jugador
 function accionParaJugador() {
   const p = partido();
   if (!p) return null;
@@ -1225,11 +1356,10 @@ function renderJugadores() {
   const accion = accionParaJugador();
   const asignado = accion && accion.jugador != null ? `#${accion.jugador}` : '—';
   boton.innerHTML = `Jugador <b>${accion ? asignado : ''}</b> ▾`;
-  boton.title = !accion ? 'No hay recepción ni ataque para asignar'
-    : accion.tipo === 'ataque' ? 'Asignar jugador al último ataque' : 'Asignar jugador a la última recepción';
+  boton.title = !accion ? 'No hay recepción, defensa ni ataque para asignar' : `Asignar jugador a: ${DESTINO_JUGADOR[accion.tipo].toLowerCase()}`;
   boton.classList.toggle('con-jugador', !!(accion && accion.jugador != null));
   if (pop.hidden) return;
-  const destino = accion ? (accion.tipo === 'ataque' ? 'Último ataque' : 'Última recepción') : 'Sin recepción ni ataque';
+  const destino = accion ? DESTINO_JUGADOR[accion.tipo] : 'Sin recepción, defensa ni ataque';
   const chips = lista.length
     ? lista.map((j) =>
       `<button class="jug-chip${accion && accion.jugador === j.num ? ' activo' : ''}" data-jug="${j.num}" ${accion ? '' : 'disabled'} title="${esc(textoJugador(j.num))}">` +
@@ -1406,17 +1536,36 @@ function renderCancha() {
     }
     if (r) {
       if (ui.vista === 'rally') titulo = `Cancha · rally ${set.rallies.indexOf(r) + 1}`;
+      s += dibujarPases(r);
       for (const j of jugadas(r)) s += dibujarJugada(j);
     }
   }
   svg.innerHTML = s;
   $('cancha-titulo').textContent = titulo;
 
-  const clic = esModoClic(e.modo);
+  const clic = esModoClic(e);
   svg.classList.toggle('clic', clic);
   if (e.modo === 'armadaClic') svg.style.cursor = cursorMira(colorVar(ARMADAS[pendiente.armada].variable));
   else if (e.modo === 'golpe') svg.style.cursor = cursorMira(colorVar('--texto'));
+  else if (clic) svg.style.cursor = cursorMira(colorVar('--texto-2'));
   else svg.style.cursor = '';
+}
+
+// Posición del pase (recepción o defensa): cuadrado chico hueco, con línea fina
+// hasta el punto de armada si la hay.
+function dibujarPases(r) {
+  let s = '';
+  r.acciones.forEach((a, i) => {
+    if (!['recepcion', 'defensa'].includes(a.tipo) || !a.punto) return;
+    const [x, y] = aVB(a.punto);
+    const sig = r.acciones[i + 1];
+    if (sig && sig.tipo === 'armada') {
+      const [ax, ay] = aVB(sig.punto);
+      s += `<line x1="${x}" y1="${y}" x2="${ax}" y2="${ay}" stroke="var(--texto-3)" stroke-width="0.5" stroke-dasharray="1.2 1"/>`;
+    }
+    s += `<rect x="${x - 1.8}" y="${y - 1.8}" width="3.6" height="3.6" fill="var(--superficie-cancha)" stroke="var(--texto-2)" stroke-width="0.9"/>`;
+  });
+  return s;
 }
 
 function aplicarLeyenda() {
@@ -1429,8 +1578,9 @@ function renderLeyenda() {
     `<span class="ley">${muestra(t)}${esc(ARMADAS[t].corto === '1er t.' ? '1er tiempo' : ARMADAS[t].corto)} ${kbd(k.toUpperCase())}</span>`).join('');
   const res = Object.keys(RESULTADOS).map((r) =>
     `<span class="ley">${simboloMini(r)}${esc(RESULTADOS[r].nombre)}</span>`).join('');
+  const pase = `<span class="ley"><svg class="simbolo" viewBox="0 0 22 10" aria-hidden="true"><rect x="7" y="2" width="6" height="6" fill="none" stroke="var(--texto-2)" stroke-width="1.2"/></svg>Pase</span>`;
   $('leyenda').innerHTML =
-    `<div class="leyenda-fila"><span class="etiqueta">Armada</span>${arm}</div>` +
+    `<div class="leyenda-fila"><span class="etiqueta">Armada</span>${arm}${pase}</div>` +
     `<div class="leyenda-fila"><span class="etiqueta">Resultado</span>${res}</div>`;
 }
 
@@ -1443,8 +1593,13 @@ function filaAccion(r, a) {
   const p = partido();
   switch (a.tipo) {
     case 'saque': tipo = 'Saque'; det = `<span style="font-family:var(--sans)">${esc(nombre(a.equipo))}</span>`; break;
-    case 'recepcion': tipo = 'Recepción'; det = `${jugadorBadge(a)}${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>`; break;
-    case 'recovery': tipo = 'Recovery'; det = `<span class="calc">${esc(nombre(p.scouteado))}</span>`; break;
+    case 'recepcion':
+    case 'defensa':
+      tipo = a.tipo === 'recepcion' ? 'Recepción' : 'Defensa';
+      det = `${jugadorBadge(a)}${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>` +
+        (a.punto ? '<span class="calc">· pase marcado</span>' : '');
+      break;
+    case 'recovery': tipo = 'Cobertura'; det = `<span class="calc">${esc(nombre(p.scouteado))}</span>`; break;
     case 'recibeLibre': tipo = 'Libre'; det = '<span class="calc">recibe balón libre</span>'; break;
     case 'pasaLibre': tipo = 'Libre'; det = '<span class="calc">pasa al otro lado</span>'; break;
     case 'armada': {
@@ -1452,8 +1607,8 @@ function filaAccion(r, a) {
       const z = zonaAtaque(a);
       const fase = faseArmada(r, a);
       det = `${muestra(a.armada)}<span>${ARMADAS[a.armada].corto}</span>` +
-        (z ? `<span class="calc">→ ${z}</span>` : '') +
-        (fase !== 'recepcion' ? `<span class="calc">· ${fase}</span>` : '');
+        (z ? `<span class="calc">→ ${z}${a.zaguero ? ' (zag.)' : ''}</span>` : '') +
+        (fase !== 'recepcion' ? `<span class="calc">· ${FASES[fase].toLowerCase()}</span>` : '');
       break;
     }
     case 'ataque': {
@@ -1483,6 +1638,8 @@ function resumenRally(r, p) {
     const z = zonaAtaque(ult.armada);
     s += muestra(ult.armada.armada) + `<span>${ARMADAS[ult.armada.armada].corto}${z ? ' ' + z : ''}` +
       (ult.ataque.resultado ? ` · ${RESULTADOS[ult.ataque.resultado].nombre}` : '') + '</span>';
+  } else if (r.motivo) {
+    s += `<span class="tenue">${MOTIVOS[r.motivo].nombre.toLowerCase()}</span>`;
   } else if (r.acciones.length === 1) {
     s += '<span class="tenue">sin jugada</span>';
   } else if (rec && rec.calif === '=') {
@@ -1516,7 +1673,7 @@ function renderListas() {
     pie.hidden = false;
     if (r.gana) {
       const m = [r.marcador[0] + (r.gana === 'propio' ? 1 : 0), r.marcador[1] + (r.gana === 'rival' ? 1 : 0)];
-      pie.innerHTML = `<span>Gana <b>${esc(nombre(r.gana))}</b></span><span class="mono">${m[0]}–${m[1]}</span>`;
+      pie.innerHTML = `<span>Gana <b>${esc(nombre(r.gana))}</b>${r.motivo ? ` <span class="tenue">· ${MOTIVOS[r.motivo].nombre.toLowerCase()}</span>` : ''}</span><span class="mono">${m[0]}–${m[1]}</span>`;
     } else {
       pie.innerHTML = `<span class="tenue">En curso</span><span class="mono">${r.marcador[0]}–${r.marcador[1]}</span>`;
     }
@@ -1626,9 +1783,10 @@ const VISTAS = {
   ataque: 'Ataque',
   sideout: 'Side-out',
   recepcion: 'Recepción',
+  saque: 'Saque y bloqueo',
 };
 
-const FASES = { recepcion: 'Recepción', contra: 'Contra', recovery: 'Recovery', libre: 'Libre' };
+const FASES = { recepcion: 'Recepción', contra: 'Contra', recovery: 'Cobertura', libre: 'Libre' }; // 'recovery' se muestra como «Cobertura»
 const ORDEN_ZONAS = ['Z4', 'Z3', 'Z2', 'Z1', 'Z6', 'Z5'];
 const CALIFS = ['#', '+', '!', '-', '='];
 
@@ -1637,8 +1795,9 @@ const DIMS_DATOS = {
   jugadas: ['set', 'rot', 'pase', 'fase', 'armada', 'zona', 'golpe', 'resultado', 'jugador'],
   recepciones: ['set', 'rot', 'pase', 'jugador'],
   rallies: ['set', 'rot', 'pase'],
+  todos: ['set', 'rot'],
 };
-const DATOS_VISTA = { armador: 'jugadas', ataque: 'jugadas', sideout: 'rallies', recepcion: 'recepciones' };
+const DATOS_VISTA = { armador: 'jugadas', ataque: 'jugadas', sideout: 'rallies', recepcion: 'recepciones', saque: 'todos' };
 
 function equipoScout(p) { return slug(nombre(p.scouteado, p)); }
 
@@ -1660,7 +1819,7 @@ function partidosIncluidos() {
 }
 
 function recolectar(partidos) {
-  const jugadas = [], recepciones = [], rallies = [];
+  const jugadas = [], recepciones = [], rallies = [], todos = [];
   for (const p of partidos) {
     const scout = p.scouteado;
     for (const set of p.sets) {
@@ -1678,17 +1837,27 @@ function recolectar(partidos) {
         if (rec) {
           recepciones.push({ ...base, t: Math.max(0, rec.t - 2), pase: rec.calif, jugador: rec.jugador ?? null, gana: r.gana });
         }
+        if (r.gana) {
+          // Saque y bloqueo. Ace del que saca: motivo «ace» o recepción «=» del scouteado.
+          const sacaScout = r.saca === scout, ganaScout = r.gana === scout;
+          let evento = null;
+          if (r.motivo === 'bloqueo') evento = 'bloqueo';
+          else if (r.motivo === 'errorSaque') evento = sacaScout ? 'errorScout' : 'errorOtro';
+          else if (r.motivo === 'ace' || (rec && rec.calif === '=')) evento = sacaScout ? 'aceScout' : 'aceOtro';
+          todos.push({ ...base, t: r.t, sacaScout, ganaScout, evento, pid: p.id });
+        }
         r.acciones.forEach((a, i) => {
           if (a.tipo !== 'armada') return;
-          const previa = r.acciones[i - 1];
+          const contacto = contactoDeArmada(r, a);
           const fase = faseArmada(r, a);
           const sig = r.acciones[i + 1];
           const ataque = sig && sig.tipo === 'ataque' ? sig : null;
           jugadas.push({
             ...base,
-            t: Math.max(0, (fase === 'recepcion' ? previa.t : a.t) - 2),
+            t: Math.max(0, (contacto ? contacto.t : a.t) - 2),
             fase,
-            pase: fase === 'recepcion' ? previa.calif : null,
+            // Calidad del pase: recepción o defensa calificada justo antes de la armada
+            pase: contacto ? contacto.calif : null,
             armada: a.armada,
             zona: zonaAtaque(a),
             golpe: ataque ? ataque.golpe : null,
@@ -1703,7 +1872,7 @@ function recolectar(partidos) {
       });
     }
   }
-  return { jugadas, recepciones, rallies };
+  return { jugadas, recepciones, rallies, todos };
 }
 
 function filtrar(lista, tipo) {
@@ -1794,15 +1963,29 @@ function canchaMini(contenido, p) {
 }
 
 function partesArmador(d, p) {
-  const js = filtrar(d.jugadas, 'jugadas');
+  const todas = filtrar(d.jugadas, 'jugadas');
+  // La distribución es la del armador en jugadas normales: emergencia y segunda van aparte
+  const js = todas.filter((j) => !ARMADAS[j.armada].especial);
+  const emerg = todas.filter((j) => j.armada === 'emergencia').length;
+  const buenas = (lista) => lista.filter((j) => j.pase === '#' || j.pase === '+');
+  const filaSegunda = (etiqueta, lista) => {
+    const seg = lista.filter((j) => j.armada === 'segunda');
+    const b = buenas(lista);
+    const segB = buenas(seg).length;
+    return `<tr><th>${etiqueta}</th><td class="num">${seg.length || '·'}</td><td class="num tenue">${b.length}</td>` +
+      `<td class="num"><b>${b.length ? txtPct(pct(segB, b.length)) : '—'}</b></td></tr>`;
+  };
+  const segunda = `<table class="tabla"><tr><th>Rot.</th><th>Segundas</th><th>Armadas # +</th><th>% segunda</th></tr>` +
+    [1, 2, 3, 4, 5, 6].map((r) => filaSegunda(`P${r}`, todas.filter((j) => j.rot === r))).join('') +
+    filaSegunda('Total', todas) + `</table>`;
   const porRot = [1, 2, 3, 4, 5, 6].map((r) => ({ etiqueta: `P${r}`, jugadas: js.filter((j) => j.rot === r), filtro: { rot: r } }));
   porRot.push({ etiqueta: 'Total', jugadas: js, filtro: {} });
   const porPase = ['#', '+', '!', '-'].map((c) => ({ etiqueta: c, jugadas: js.filter((j) => j.pase === c), filtro: { pase: c } }));
-  const puntos = js.map((j) => {
+  const puntos = todas.map((j) => {
     const [x, y] = aVB(j.armadaObj.punto);
     return `<circle cx="${x}" cy="${y}" r="2.2" fill="none" stroke="var(${ARMADAS[j.armada].variable})" stroke-width="1.1" opacity="0.85"/>`;
   }).join('');
-  const porTipo = Object.keys(ARMADAS).map((t) => {
+  const porTipo = Object.keys(ARMADAS).filter((t) => !ARMADAS[t].especial).map((t) => {
     const c = js.filter((j) => j.armada === t).length;
     return `<span class="ley clic${marcaFiltro({ armada: t })}" data-fijar='${JSON.stringify({ armada: t })}'>${muestra(t)}${ARMADAS[t].corto} <b>${txtPct(pct(c, js.length))}</b></span>`;
   }).join('');
@@ -1811,6 +1994,9 @@ function partesArmador(d, p) {
     porRot: tablaZonas(porRot, 'Rot.'),
     porPase: tablaZonas(porPase, 'Pase'),
     porTipo: `<div class="leyenda-fila">${porTipo}</div>`,
+    // Emergencias sobre el total de armadas (incluidas emergencia y segunda)
+    emergencias: `<p class="stats-nota">${muestra('emergencia')} Emergencias: <b>${emerg}</b> (${txtPct(pct(emerg, todas.length))} de ${todas.length} armadas)</p>`,
+    segunda,
     cancha: canchaMini(puntos, p),
   };
 }
@@ -1911,14 +2097,36 @@ function partesRecepcion(d) {
   };
 }
 
+function partesSaque(d, p) {
+  const rs = filtrar(d.todos, 'todos');
+  const cols = ['aceScout', 'errorScout', 'bloqueo', 'aceOtro', 'errorOtro'];
+  const fila = (etiqueta, lista, filtro) => {
+    const n = (ev) => lista.filter((r) => r.evento === ev).length;
+    return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
+      `<td class="num tenue">${lista.filter((r) => r.sacaScout).length}</td>` +
+      cols.map((c, i) => `<td class="num${i === 3 ? ' sep' : ''}">${n(c) || '·'}</td>`).join('') +
+      `<td class="num tenue">${lista.filter((r) => !r.sacaScout).length}</td></tr>`;
+  };
+  const scoutNom = esc(nombre(p.scouteado)), otroNom = esc(nombre(otro(p.scouteado)));
+  const cab = (t) => `<tr><th></th><th colspan="4" class="grupo-col">${scoutNom}</th><th colspan="3" class="grupo-col sep">${otroNom}</th></tr>` +
+    `<tr><th>${t}</th><th>Saques</th><th>Aces</th><th>Err. saque</th><th>Bloqueos</th><th class="sep">Aces</th><th>Err. saque</th><th>Saques</th></tr>`;
+  const sets = [...new Set(rs.map((r) => r.set))].sort((a, b) => a - b);
+  return {
+    porSet: `<table class="tabla">${cab('Set')}${sets.map((st) => fila(`Set ${st}`, rs.filter((r) => r.set === st), { set: st })).join('')}${fila('Total', rs, {})}</table>`,
+    porRot: `<table class="tabla">${cab('Rot.')}${[1, 2, 3, 4, 5, 6].map((r) => fila(`P${r}`, rs.filter((x) => x.rot === r), { rot: r })).join('')}</table>`,
+  };
+}
+
 // ---------- Vistas en pantalla ----------
 
 function vistaArmador(d) {
   const a = partesArmador(d, partido());
-  return `<p class="stats-nota">${a.n} armadas. Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
+  return `<p class="stats-nota">${a.n} armadas del armador (sin emergencia ni segunda). Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
     `<h3>Por rotación</h3>${a.porRot}` +
-    `<h3>Por calidad de pase <span class="tenue">(solo side-out)</span></h3>${a.porPase}` +
+    `<h3>Por calidad de pase <span class="tenue">(recepción y defensa)</span></h3>${a.porPase}` +
     `<h3>Tipo de armada</h3>${a.porTipo}` +
+    a.emergencias +
+    `<h3>Segunda del armador por rotación <span class="tenue">(% sobre armadas con pase # o +)</span></h3>${a.segunda}` +
     a.cancha;
 }
 
@@ -1937,6 +2145,14 @@ function vistaSideout(d) {
   return `<p class="stats-nota">Rallies en que el ${esc(nombre(partido().scouteado))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
     `<h3>Por rotación</h3>${a.porRot}` +
     `<h3>Por calidad de pase</h3>${a.porPase}`;
+}
+
+function vistaSaque(d) {
+  const a = partesSaque(d, partido());
+  return `<p class="stats-nota">Aces y errores de saque de cada equipo, y puntos de bloqueo del ${esc(nombre(partido().scouteado))}. ` +
+    `Se registran al cerrar con G (3 ace · 4 error de saque · 5 bloqueo); una recepción «=» cuenta como ace del que saca. ` +
+    `La rotación es la del armador scouteado.</p>` +
+    `<h3>Por set</h3>${a.porSet}<h3>Por rotación</h3>${a.porRot}`;
 }
 
 function vistaRecepcion(d) {
@@ -2005,11 +2221,13 @@ function htmlResumen(d, partidos) {
     kpi(txtEficacia(k.eficacia), 'Eficacia de ataque', `${k.ataques} ataques`) +
     kpi(txtPct(k.primerAtaque), 'Punto en 1er ataque', 'tras recepción') +
     `</div>` +
-    `<section class="r-sec"><h2>Distribución del armador <span>${arm.n} armadas · % de cada fila por zona de ataque</span></h2>` +
+    `<section class="r-sec"><h2>Distribución del armador <span>${arm.n} armadas (sin emergencia ni segunda) · % de cada fila por zona de ataque</span></h2>` +
     `<div class="r-2col"><div><h3>Por rotación</h3>${arm.porRot}</div>` +
-    `<div><h3>Por calidad de pase (side-out)</h3>${arm.porPase}</div></div></section>` +
+    `<div><h3>Por calidad de pase (recepción y defensa)</h3>${arm.porPase}${arm.emergencias}` +
+    `<h3>Segunda del armador (% sobre armadas con pase # o +)</h3>${arm.segunda}</div></div></section>` +
     `<section class="r-sec"><h2>Dónde cae la armada <span>${esc(scoutNom)} a la izquierda, atacando hacia la derecha</span></h2>` +
-    `<div class="r-cancha">${arm.cancha}</div>${arm.porTipo}</section>` +
+    `<div class="r-cancha">${arm.cancha}</div>${arm.porTipo}` +
+    `<div class="leyenda-fila">${['emergencia', 'segunda'].map((t) => `<span class="ley">${muestra(t)}${ARMADAS[t].nombre}</span>`).join('')}</div></section>` +
     `</div>` +
     `<div class="hoja salto">` +
     `<section class="r-sec"><h2>Ataque por zona <span>${atq.n} ataques · dirección sobre remates · eficacia = (puntos − errores − bloqueos) / ataques con resultado</span></h2>` +
@@ -2092,7 +2310,8 @@ function renderAvisoStats() {
 
 function renderClips(d) {
   const tipo = DATOS_VISTA[stats.vista];
-  const lista = filtrar(d[tipo], tipo).slice().sort((a, b) =>
+  const base = tipo === 'todos' ? d.todos.filter((r) => r.evento) : d[tipo];
+  const lista = filtrar(base, tipo).slice().sort((a, b) =>
     a.pid === b.pid ? a.set - b.set || a.rally - b.rally || a.t - b.t : a.pid.localeCompare(b.pid));
   const varios = partidosIncluidos().length > 1;
   const corto = (pid) => {
@@ -2112,6 +2331,15 @@ function renderClips(d) {
       det = califBadge(c.pase) + `<span style="font-family:var(--sans)">${CALIF[c.pase].nombre}</span>` +
         (c.jugador != null ? `<span class="jug">${c.jugador}</span>` : '') +
         `<span class="calc">· gana ${esc(nombre(c.gana, almacen.partidos[c.pid]))}</span>`;
+    } else if (tipo === 'todos') {
+      const x = almacen.partidos[c.pid];
+      const quien = (eq) => esc(nombre(eq, x));
+      const textos = {
+        aceScout: `Ace de ${quien(x.scouteado)}`, errorScout: `Error de saque de ${quien(x.scouteado)}`,
+        aceOtro: `Ace de ${quien(otro(x.scouteado))}`, errorOtro: `Error de saque de ${quien(otro(x.scouteado))}`,
+        bloqueo: `Bloqueo de ${quien(x.scouteado)}`,
+      };
+      det = `<span>${textos[c.evento]}</span>`;
     } else {
       det = (c.pase ? califBadge(c.pase) : '<span class="tenue">sin recepción</span>') +
         `<span>${c.sideOut ? 'Side-out' : 'Punto rival'}</span>` + (c.primerPunto ? '<span class="calc">· 1er ataque</span>' : '');
@@ -2121,7 +2349,7 @@ function renderClips(d) {
       `<span class="t">${fmtTiempo(c.t)}</span><span class="tenue">${c.rot ? 'P' + c.rot : '—'}</span>` +
       `<span class="detalle">${det}</span><button class="ir" title="Reproducir">▶</button></div>`;
   }).join('');
-  const nombres = { jugadas: 'jugadas', recepciones: 'recepciones', rallies: 'rallies' };
+  const nombres = { jugadas: 'jugadas', recepciones: 'recepciones', rallies: 'rallies', todos: 'rallies' };
   $('clips-titulo').textContent = `Clips · ${VISTAS[stats.vista]}`;
   $('clips-cuenta').textContent = `${lista.length} ${nombres[tipo]}`;
   $('clips-lista').innerHTML = filas || '<div class="vacio">No hay jugadas con estos filtros.</div>';
@@ -2136,7 +2364,7 @@ function renderStats() {
   renderFiltros(d);
   $('stats-tabs').innerHTML = Object.entries(VISTAS)
     .map(([k, v]) => `<button data-vistastats="${k}" class="${stats.vista === k ? 'activo' : ''}">${v}</button>`).join('');
-  const vistas = { armador: vistaArmador, ataque: vistaAtaque, sideout: vistaSideout, recepcion: vistaRecepcion };
+  const vistas = { armador: vistaArmador, ataque: vistaAtaque, sideout: vistaSideout, recepcion: vistaRecepcion, saque: vistaSaque };
   $('stats-contenido').innerHTML = vistas[stats.vista](d);
   renderClips(d);
 }

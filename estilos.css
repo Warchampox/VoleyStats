@@ -22,6 +22,8 @@
   --armada-alta: #56B4E9;
   --armada-rapida: #E69F00;
   --armada-pipe: #CC79A7;
+  --armada-emergencia: #009E73;
+  --armada-segunda: #0072B2;
 
   /* Calificación */
   --calif-perfecta: #E6E8EB;
@@ -379,7 +381,9 @@ kbd.principal { background: var(--texto); color: var(--fondo); border-color: var
 .teclas-paso.c2 { grid-template-columns: 1fr 1fr; }
 .teclas-paso.c3 { grid-template-columns: 1fr 1fr 1fr; }
 .teclas-paso.c4 { grid-template-columns: repeat(4, 1fr); }
-.teclas-paso.c5 { grid-template-columns: repeat(5, 1fr); }
+.teclas-paso.c5 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px 8px; }
+.teclas-paso.c5 .tecla-item { gap: 5px; font-size: 12px; }
+.teclas-paso.c5 .muestra { width: 12px; }
 .tecla-item { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; color: var(--texto-2); }
 .tecla-item span { overflow: hidden; text-overflow: ellipsis; }
 
@@ -644,6 +648,7 @@ body.modo-stats .solo-captura { display: none !important; }
   .resumen .barra-calif { height: 18px; margin: 2px 0 6px; }
   .resumen .barra-calif .seg { font-size: 9px; }
   .resumen .calif-error { color: var(--error); }
+  .resumen .stats-nota { font-size: 9.5px; margin: 4px 0 2px; color: var(--texto-2); }
 
   .r-cancha { width: 86%; margin: 2px auto 0; }
   .r-cancha.chica { width: 62%; }
@@ -651,3 +656,6 @@ body.modo-stats .solo-captura { display: none !important; }
 
   .r-pie { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--borde); font-size: 8.5px; color: var(--texto-3); text-align: right; }
 }
+
+.tabla .grupo-col { text-align: center; color: var(--texto-2); font-weight: 500; border-bottom: 1px solid var(--borde-control); }
+.tabla .sep { border-left: 1px solid var(--borde-control); }
