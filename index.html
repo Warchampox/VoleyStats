@@ -7,153 +7,185 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="estilos.css?v=19">
+  <link rel="stylesheet" href="estilos.css?v=20">
 </head>
 <body>
   <header class="cabecera">
     <div class="marca">VoleyStats</div>
-    <div class="separador"></div>
-    <button class="partido-info" id="partido-info" title="Datos del partido"></button>
-    <div class="scouteando"><span class="etiqueta">Scouteando</span><span id="scouteando"></span></div>
     <div class="selector modo" id="selector-modo">
       <button data-modo="captura" class="activo">Captura</button>
       <button data-modo="stats">Estadísticas</button>
     </div>
+    <button class="partido-info solo-captura" id="partido-info" title="Datos del partido"></button>
     <div class="relleno"></div>
-    <div class="guardado" id="guardado"></div>
-    <button class="btn" id="btn-partidos">Partidos</button>
-    <button class="btn" id="btn-plantel">Plantel</button>
-    <button class="btn" id="btn-importar" title="Abrir un partido desde un archivo JSON exportado">Importar JSON</button>
-    <button class="btn" id="btn-exportar" title="Descargar el partido abierto como archivo JSON">Exportar JSON</button>
+    <div class="guardado solo-captura" id="guardado"></div>
+    <button class="btn-tenue solo-captura" id="btn-foco" title="Modo foco (O)">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 4.5V1h3.5M9.5 1H13v3.5M13 9.5V13H9.5M4.5 13H1V9.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+      Foco
+    </button>
+    <button class="btn-tenue solo-stats" id="resumen-pdf" title="Arma un resumen y abre el diálogo de impresión: elige «Guardar como PDF»">Resumen PDF</button>
+    <div class="menu-ancla">
+      <button class="btn-icono" id="btn-menu" title="Más opciones" aria-haspopup="true">⋯</button>
+      <div class="menu" id="menu-header" hidden>
+        <button id="btn-partidos">Partidos…</button>
+        <button id="btn-datos">Datos del partido…</button>
+        <button id="btn-plantel">Plantel…</button>
+        <button id="btn-cambiar-video">Cambiar video…</button>
+        <hr>
+        <button id="btn-importar">Importar JSON…</button>
+        <button id="btn-exportar">Exportar JSON</button>
+      </div>
+    </div>
     <input type="file" id="input-importar" accept=".json,application/json" hidden>
   </header>
 
+  <button class="btn-tenue salir-foco" id="btn-salir-foco" title="Salir del foco (O)">
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.5 1v3.5H1M13 4.5H9.5V1M9.5 13V9.5H13M1 9.5h3.5V13" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+    Salir del foco
+  </button>
+
   <main class="cuerpo">
-    <section class="col-izq">
-      <div class="video" id="video">
-        <div id="yt-host"></div>
-        <video id="video-local" playsinline preload="auto" hidden></video>
-        <div class="video-capa" id="video-capa"></div>
-        <button class="chip-fuente" id="chip-fuente" title="Cambiar video" hidden></button>
-        <div class="badge-pausado" id="badge-pausado">PAUSADO</div>
-        <div class="tiempo-grande" id="tiempo-grande">0:00,0</div>
-        <button class="chip-fuente chip-sonido" id="btn-sonido" hidden></button>
+    <!-- Video: un solo elemento que cambia de lugar con la grilla (nunca se mueve en el DOM) -->
+    <div class="video" id="video">
+      <div id="yt-host"></div>
+      <video id="video-local" playsinline preload="auto" hidden></video>
+      <div class="video-capa" id="video-capa"></div>
+      <div class="badge-pausado" id="badge-pausado">PAUSADO</div>
+      <div class="tiempo-grande" id="tiempo-grande">0:00,0</div>
 
-        <div class="video-carga" id="video-carga">
-          <div class="carga-caja">
-            <h2 id="carga-titulo">Carga el video del partido</h2>
-            <p id="carga-texto">Pega el link de YouTube o abre el archivo descargado. El archivo no se sube a ningún lado.</p>
-            <form class="carga-fila" id="form-youtube">
-              <input class="campo" id="input-youtube" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
-              <button class="btn principal" type="submit">Cargar</button>
-            </form>
-            <div class="carga-o">o</div>
-            <div class="carga-fila">
-              <button class="btn" type="button" id="btn-archivo">Abrir archivo local…</button>
-              <input type="file" id="input-archivo" accept="video/*" hidden>
-              <button class="btn" type="button" id="btn-cancelar-carga" hidden>Cancelar</button>
-            </div>
-            <div class="carga-error" id="carga-error"></div>
+      <div class="video-carga" id="video-carga">
+        <div class="carga-caja">
+          <h2 id="carga-titulo">Carga el video del partido</h2>
+          <p id="carga-texto">Pega el link de YouTube o abre el archivo descargado. El archivo no se sube a ningún lado.</p>
+          <form class="carga-fila" id="form-youtube">
+            <input class="campo" id="input-youtube" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+            <button class="btn principal" type="submit">Cargar</button>
+          </form>
+          <div class="carga-o">o</div>
+          <div class="carga-fila">
+            <button class="btn" type="button" id="btn-archivo">Abrir archivo local…</button>
+            <input type="file" id="input-archivo" accept="video/*" hidden>
+            <button class="btn" type="button" id="btn-cancelar-carga" hidden>Cancelar</button>
           </div>
+          <div class="carga-error" id="carga-error"></div>
         </div>
       </div>
+    </div>
 
-      <div class="controles">
-        <button class="btn" id="btn-atras">« −3 s <kbd>←</kbd></button>
-        <button class="btn principal" id="btn-play"><span id="play-texto">▶ Reproducir</span> <kbd>Espacio</kbd></button>
-        <button class="btn" id="btn-adelante">+3 s » <kbd>→</kbd></button>
-        <div class="grupo" id="grupo-cuadro" title="Cuadro a cuadro (solo archivo local)">
-          <button id="btn-cuadro-atras" title="Cuadro anterior">‹ Cuadro <kbd>,</kbd></button>
-          <button id="btn-cuadro-adelante" title="Cuadro siguiente"><kbd>.</kbd> ›</button>
-        </div>
-        <div class="grupo" id="grupo-velocidad"></div>
-        <label class="casilla"><input type="checkbox" id="pausar-al-marcar"> Pausar al marcar</label>
+    <!-- ===== Captura: columna izquierda ===== -->
+    <div class="controles solo-captura" id="controles">
+      <button class="ctl" id="btn-atras" title="−3 s">
+        <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M8 2L3 7l5 5M15 2l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+      <button class="ctl" id="btn-play" title="Reproducir / pausar"></button>
+      <button class="ctl" id="btn-adelante" title="+3 s">
+        <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M3 2l5 5-5 5M10 2l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+      <button class="ctl" id="btn-sonido" title="Silenciar"></button>
+      <div class="menu-ancla">
+        <button class="ctl ctl-texto" id="btn-velocidad" title="Velocidad">1× ▾</button>
+        <div class="menu menu-arriba" id="menu-velocidad" hidden></div>
       </div>
+      <label class="casilla"><input type="checkbox" id="pausar-al-marcar"> Pausar al marcar</label>
+    </div>
 
-      <div class="linea-tiempo">
-        <span id="lt-actual">0:00,0</span>
-        <div class="barra" id="barra">
-          <div class="barra-fondo"></div>
-          <div class="barra-avance" id="barra-avance"></div>
-          <div class="barra-set" id="barra-set" hidden title="Inicio del set"></div>
-          <div class="barra-cabezal" id="barra-cabezal"></div>
-        </div>
-        <span id="lt-duracion">0:00</span>
+    <div class="linea-tiempo solo-captura" id="linea-tiempo">
+      <span id="lt-actual" hidden>0:00,0</span>
+      <div class="barra" id="barra">
+        <div class="barra-fondo"></div>
+        <div class="barra-avance" id="barra-avance"></div>
+        <div class="barra-set" id="barra-set" hidden title="Inicio del set"></div>
+        <div class="barra-cabezal" id="barra-cabezal"></div>
       </div>
+      <span id="lt-duracion">0:00</span>
+    </div>
+    <div class="pista-foco solo-captura" id="pista-foco">Controles del video al pasar el mouse · atajos con <kbd>?</kbd></div>
 
-      <div class="panel clips solo-stats" id="panel-clips">
-        <div class="panel-cab">
-          <span class="etiqueta fuerte" id="clips-titulo">Clips</span>
-          <span class="clips-aviso" id="clips-aviso"></span>
-          <span class="etiqueta" id="clips-cuenta"></span>
-        </div>
-        <div class="lista" id="clips-lista"></div>
-      </div>
+    <div class="historial solo-captura" id="historial"></div>
 
-      <div class="listas solo-captura">
-        <div class="panel">
-          <div class="panel-cab">
-            <span class="etiqueta fuerte" id="rally-titulo">Rally · acciones</span>
-            <span class="etiqueta" id="rally-info"></span>
-          </div>
-          <div class="lista" id="rally-acciones"></div>
-          <div class="pie-rally" id="rally-pie" hidden></div>
-        </div>
-        <div class="panel">
-          <div class="panel-cab">
-            <span class="etiqueta fuerte" id="anteriores-titulo">Rallies anteriores</span>
-            <span class="etiqueta" id="anteriores-cuenta"></span>
-          </div>
-          <div class="lista" id="rallies-anteriores"></div>
-        </div>
-      </div>
+    <div class="nota-revisando solo-captura" id="nota-revisando">
+      <span class="etiqueta">Revisando</span>
+      <p>El video se achica mientras la lista está abierta.</p>
+      <p id="nota-volver">Al cerrarla vuelve al rally en curso.</p>
+    </div>
+
+    <section class="anteriores solo-captura" id="anteriores">
+      <div class="plegable" id="anteriores-cab"></div>
+      <div class="anteriores-lista" id="anteriores-lista"></div>
     </section>
 
-    <section class="col-der">
-      <div class="stats solo-stats" id="stats">
-        <div class="panel alcance" id="stats-alcance"></div>
-        <div class="panel" id="stats-filtros"></div>
-        <div class="panel vistas">
-          <div class="panel-cab"><div class="selector" id="stats-tabs"></div></div>
-          <div class="vista-contenido" id="stats-contenido"></div>
-        </div>
-      </div>
+    <!-- ===== Captura: columna derecha ===== -->
+    <section class="col-der solo-captura" id="col-der">
+      <div class="marcador-linea" id="marcador-linea"></div>
 
-      <div class="panel marcador solo-captura">
+      <div class="marcador" id="marcador">
         <div class="marcador-izq">
+          <div class="marcador-sup">
+            <span class="etiqueta" id="sub-marcador"></span>
+            <div class="menu-ancla">
+              <button class="btn-icono chico" id="btn-menu-marcador" title="Sumar un punto sin jugada">⋯</button>
+              <div class="menu" id="menu-marcador" hidden></div>
+            </div>
+          </div>
           <div class="tanteo" id="tanteo"></div>
-          <div class="sub-marcador" id="sub-marcador"></div>
-          <div class="punto-rapido" id="punto-rapido"></div>
         </div>
         <div class="marcador-der">
-          <div class="rot-cab"><span class="etiqueta" id="rot-titulo">Armador</span><span class="nota">auto · clic corrige</span></div>
+          <span class="etiqueta" id="rot-titulo">Armador</span>
           <div class="chips" id="chips-rotacion"></div>
         </div>
       </div>
 
-      <div class="panel estado solo-captura" id="estado"></div>
+      <div class="ahora" id="estado"></div>
 
-      <div class="panel cancha-panel solo-captura">
-        <div class="panel-cab">
-          <span class="etiqueta fuerte" id="cancha-titulo">Cancha</span>
+      <div class="cancha-panel">
+        <div class="cancha-cab">
+          <span class="etiqueta" id="cancha-titulo">Cancha</span>
           <div class="cancha-acciones">
-          <button class="btn chico" id="btn-leyenda" title="Mostrar u ocultar la leyenda de colores y símbolos">Leyenda</button>
-          <div class="jug-menu">
-            <button class="btn chico" id="btn-jugador"></button>
-            <div class="jug-popover" id="jug-popover" hidden></div>
-          </div>
-          <div class="selector" id="selector-vista">
-            <button data-vista="rally" class="activo">Rally</button>
-            <button data-vista="set">Set</button>
-          </div>
+            <div class="jug-menu">
+              <button class="btn-tenue chico" id="btn-jugador"></button>
+              <div class="jug-popover" id="jug-popover" hidden></div>
+            </div>
+            <div class="selector tenue" id="selector-vista">
+              <button data-vista="rally" class="activo">Rally</button>
+              <button data-vista="set">Set</button>
+            </div>
           </div>
         </div>
         <div class="cancha-cont">
           <svg id="cancha" viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
-        <div class="leyenda" id="leyenda"></div>
+        <div class="cancha-pie">
+          <span class="ley tenue" id="ley-pase"></span>
+          <button class="plegable-mini" id="btn-leyenda">▸ símbolos</button>
+        </div>
+        <div class="leyenda" id="leyenda" hidden></div>
       </div>
+
+      <div class="ayuda" id="ayuda" hidden></div>
     </section>
+
+    <!-- ===== Estadísticas ===== -->
+    <section class="stats solo-stats" id="stats">
+      <div class="stats-tira" id="stats-tira"></div>
+      <div class="stats-filtros" id="stats-filtros"></div>
+      <div class="mas-filtros" id="mas-filtros" hidden></div>
+      <div class="stats-pestanas">
+        <div class="pestanas" id="stats-tabs"></div>
+        <span class="tenue mono" id="stats-resumen"></span>
+      </div>
+      <div class="stats-contenido" id="stats-contenido"></div>
+    </section>
+
+    <div class="lateral-cab solo-stats" id="lateral-cab"></div>
+    <div class="lateral-ctl solo-stats" id="lateral-ctl"></div>
+    <div class="lateral-lista solo-stats" id="panel-clips">
+      <div class="lateral-lista-cab">
+        <span class="etiqueta" id="clips-titulo">Jugadas</span>
+        <span class="clips-aviso" id="clips-aviso"></span>
+        <span class="etiqueta" id="clips-cuenta"></span>
+      </div>
+      <div class="lista" id="clips-lista"></div>
+    </div>
   </main>
 
   <div class="modal" id="modal" hidden></div>
@@ -161,6 +193,6 @@
   <!-- Resumen para imprimir / guardar como PDF: solo se ve con @media print -->
   <div class="resumen" id="resumen"></div>
 
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>

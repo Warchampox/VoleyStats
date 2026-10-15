@@ -238,5 +238,36 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
 - Header: si falta ancho, se cortan con «…» el nombre del partido y el estado de guardado,
   nunca los botones (probado a 1280 px con nombres largos). `?v=19`.
 
+### Rediseño v2 «Calma» (2026-10-15)
+
+Brief: «VoleyStats · Brief del rediseño v2». Solo presentación; datos, teclas de captura y cálculos sin cambios.
+Decisiones de Martín: tecla O = modo foco; Fase «Contra» = contra + cobertura + libre;
+ficha por rotación con 6 canchas; regla de 15 por tarjeta; destinos fijos; sin reproductor flotante.
+No existe modo para corregir un rally pasado → el lápiz de la lista queda fuera.
+
+- Captura: header 44 con menú ⋯ (Partidos, Datos, Plantel, Cambiar video, Importar/Exportar),
+  botón Foco; video 912×513; controles solo ícono y velocidad en menú «1× ▾»; historial tenue;
+  «rallies anteriores» plegable (abierta: video 704×396, agrupada por set, «Volver al rally N»);
+  marcador de 64 px con +1 en su menú ⋯; panel «Ahora» fijo en 262 px (teclas del paso +
+  línea secundaria); ayuda «?» no modal; pase como rombo con el color de su nota.
+- Modo foco (O): sin header, video ~960×540 y columna de 432, controles al pasar el mouse.
+- Estadísticas: tira con «Mostrar video» y «Elegir partidos…»; filtros segmentados (Rotación,
+  Fase, Pase, Set; «Varios» si no calza) + «+ Más filtros»; pestañas Equipo / Ataque /
+  Side-out y recepción / Saque y bloqueo; video lateral de 432 px con lista de jugadas,
+  anterior / siguiente y «Seguir solo» (8 s por clip).
+- Equipo: media cancha con flechas armador → zona (color = armada predominante), 4 frases de
+  lectura con «ver jugadas», ficha por rotación (clic filtra), tabla plegada.
+- Ataque: barra de dirección, tarjetas por zona de origen (flechas si n ≥ 15, si no una a una),
+  tablas por zona y por jugador con el máximo resaltado, impactos plegados.
+- Subtítulos de YouTube: se apagan en cada cambio de estado y tras cada salto.
+- `?v=20`.
+
+Probado a 1440×812 en el navegador: captura (Ahora 262 px, sin scroll), ayuda, lista abierta,
+modo foco, las 4 pestañas, filtros, «ver jugadas» y clips del lateral. Sin errores de consola.
+
+**Pendiente de revisar (no alcanzó la sesión):** resumen PDF con las vistas nuevas (paso 8 del
+brief; los cálculos del PDF no cambiaron, pero hay que confirmar las 2 páginas), pantalla de
+1280 px de ancho, y una pasada completa de captura con teclado tras el rediseño.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

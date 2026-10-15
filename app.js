@@ -15,6 +15,8 @@ const TECLAS = {
   atrasLargo: 'j', // también Shift+←
   adelanteLargo: 'l', // también Shift+→
   silencio: 'm',
+  foco: 'o', // entra y sale del modo foco
+  ayuda: '?',
   cuadroAtras: ',',
   cuadroAdelante: '.',
   nuevoRally: 'enter',
@@ -507,6 +509,7 @@ const Video = {
       this.yt.seekTo(t, true);
       // seekTo reproduce si el video estaba en "cued"; se respeta la pausa
       if (estaba) this.yt.pauseVideo();
+      setTimeout(() => this.sinSubtitulos(), 400);
     } else if (this.fuente === 'local') {
       this.el.currentTime = t;
     }
@@ -559,7 +562,8 @@ const Video = {
             resolver();
           },
           // YouTube vuelve a activar los subtítulos al reproducir si el usuario los tiene por defecto
-          onStateChange: (ev) => { if (ev.data === YT.PlayerState.PLAYING) this.sinSubtitulos(); },
+          // y también los recarga tras un salto o una pausa: se apagan en cada cambio de estado
+          onStateChange: () => this.sinSubtitulos(),
           onError: () => rechazar(new Error('video')),
         },
       });
@@ -1009,19 +1013,20 @@ function render() {
   renderMarcador();
   renderEstado();
   renderCancha();
-  renderListas();
+  renderHistorial();
+  renderAnteriores();
   renderCargaVideo();
   renderControles();
   renderJugadores();
   if (ui.modo === 'stats') renderStats();
 }
 
+function tituloPartido(x = partido()) {
+  return x ? `${nombre('rival', x)} vs ${nombre('propio', x)} · ${fmtFecha(x.fecha)}` : 'Sin partido';
+}
+
 function renderCabecera() {
-  const p = partido();
-  if (!p) { $('partido-info').textContent = 'Sin partido'; $('scouteando').textContent = '—'; return; }
-  const set = setActual(p);
-  $('partido-info').innerHTML = `${esc(nombre('rival'))} vs ${esc(nombre('propio'))} · ${esc(fmtFecha(p.fecha))} · <b>Set ${set.numero}</b>`;
-  $('scouteando').textContent = nombre(p.scouteado);
+  $('partido-info').textContent = tituloPartido();
 }
 
 function renderGuardado() {
@@ -1036,35 +1041,37 @@ function renderGuardado() {
 
 function renderMarcador() {
   const p = partido();
-  if (!p) { $('tanteo').innerHTML = ''; $('sub-marcador').textContent = ''; $('chips-rotacion').innerHTML = ''; $('punto-rapido').innerHTML = ''; return; }
+  if (!p) {
+    for (const id of ['tanteo', 'chips-rotacion', 'marcador-linea', 'menu-marcador']) $(id).innerHTML = '';
+    $('sub-marcador').textContent = '';
+    return;
+  }
   const set = setActual(p);
   const r = rallyAbierto(set);
   const m = r ? r.marcador : marcadorTras(set);
   const saca = r ? r.saca : (set.final ? null : sacaSiguiente(set));
   const g = setsGanados(p);
-  const punto = (eq) => `<span class="punto-saque${saca === eq ? '' : ' oculto'}"></span>`;
+  const punto = (eq) => (saca === eq ? '<span class="punto-saque"></span>' : '');
   $('tanteo').innerHTML =
-    `<span class="equipo" title="${esc(nombre('propio'))}">${esc(nombre('propio'))}</span>` +
+    `<span class="equipo" title="${esc(nombre('propio'))}">${punto('propio')}${esc(nombre('propio'))}</span>` +
     `<span class="num">${m[0]}</span><span class="guion">–</span><span class="num">${m[1]}</span>` +
-    `<span class="equipo" title="${esc(nombre('rival'))}">${esc(nombre('rival'))} ${punto('rival')}</span>`;
-  if (saca === 'propio') $('tanteo').firstElementChild.insertAdjacentHTML('beforeend', ' ' + punto('propio'));
-  $('sub-marcador').textContent =
-    `Set ${set.numero} · sets ${g[0]}–${g[1]}` + (saca ? ` · saca ${nombre(saca)}` : '');
-  $('punto-rapido').innerHTML = ['propio', 'rival'].map((eq) =>
-    `<button class="btn chico" data-punto="${eq}" title="Sumar un punto sin registrar la jugada">+1 ${esc(nombre(eq))}</button>`).join('');
+    `<span class="equipo" title="${esc(nombre('rival'))}">${punto('rival')}${esc(nombre('rival'))}</span>`;
+  $('sub-marcador').textContent = `Set ${set.numero} · sets ${g[0]}–${g[1]}`;
+  // Menú del marcador: sumar un punto sin jugada (G sigue funcionando igual)
+  $('menu-marcador').innerHTML = ['propio', 'rival'].map((eq) =>
+    `<button data-punto="${eq}">+1 ${esc(nombre(eq))} <span class="tenue">· sin jugada</span></button>`).join('');
 
   $('rot-titulo').textContent = `Armador ${nombre(p.scouteado)}`;
   const rot = rotacionEn(set, indiceRallyVigente(set), p.scouteado);
   $('chips-rotacion').innerHTML = [1, 2, 3, 4, 5, 6]
-    .map((n) => `<button data-rot="${n}" class="${rot === n ? 'activo' : ''}">P${n}</button>`).join('');
+    .map((n) => `<button data-rot="${n}" class="${rot === n ? 'activo' : ''}" title="Corregir: armador en P${n}">P${n}</button>`).join('');
+  // Modo foco: el marcador en una sola línea
+  $('marcador-linea').innerHTML = `<b>${m[0]}–${m[1]}</b> · ${saca ? `saca ${esc(nombre(saca))} · ` : ''}set ${set.numero}` +
+    (rot ? ` · armador <b>P${rot}</b>` : '');
 }
 
 function kbd(tecla, principal = false) {
   return `<kbd class="${principal ? 'principal' : ''}">${esc(tecla)}</kbd>`;
-}
-
-function teclaItem(tecla, texto, extra = '', principal = false) {
-  return `<div class="tecla-item">${kbd(tecla, principal)}${extra}<span>${esc(texto)}</span></div>`;
 }
 
 function califBadge(c) { return `<span class="calif ${CALIF[c].clase}">${esc(c)}</span>`; }
@@ -1085,222 +1092,157 @@ function rallyMostrado(set) {
   return set.rallies[set.rallies.length - 1] || null;
 }
 
-function celdasPasos(e) {
-  const vacia = { valor: '—' };
-  const c = [{ ...vacia }, { ...vacia }, { ...vacia }, { ...vacia }];
-  if (!e.set) return c;
-  const r = e.r || rallyMostrado(e.set);
-  if (!r) return c;
-  const seqs = secuencias(r);
-  let indice = Math.max(0, seqs.length - 1);
-  let seq = seqs[indice] || [];
-  if (e.r) {
-    // Rally abierto tras un ataque que sigue: empieza una secuencia nueva
-    const ult = seq[seq.length - 1];
-    if (ult && cierraSecuencia(ult)) { seq = []; indice = seqs.length; }
-  }
-  const rec = seq.find((a) => a.tipo === 'recepcion');
-  const def = seq.find((a) => a.tipo === 'defensa');
-  const recov = seq.find((a) => a.tipo === 'recovery');
-  const previa = seqs[indice - 1];
-  const tras = previa && previa[previa.length - 1];
-  const cobertura = recov || (tras && tras.tipo === 'ataque' && tras.resultado === 'rejugado');
-  const libreRec = seq.find((a) => a.tipo === 'recibeLibre');
-  const librePasa = seq.find((a) => a.tipo === 'pasaLibre');
-  const arm = seq.find((a) => a.tipo === 'armada');
-  const atq = seq.find((a) => a.tipo === 'ataque');
-  const scout = (e.p || partido()).scouteado;
+// Contenido del panel «Ahora»: título, una línea de contexto, las teclas
+// principales del paso (2 columnas, 3 si hay más de 6) y una línea secundaria.
+function principal(tecla, texto, extra = '', activa = false) {
+  return { tecla, texto, extra, activa };
+}
 
-  if (rec) c[0] = { valor: '✓ ' + rec.calif + (rec.punto ? ' · pase' : '') };
-  else if (def) c[0] = { valor: `✓ Def. ${def.calif}${def.punto ? ' · pase' : ''}` };
-  else if (cobertura) c[0] = { valor: 'Cobertura' };
-  else if (libreRec) c[0] = { valor: 'Libre' };
-  else if (r.saca === scout || indice > 0) c[0] = { valor: 'Contra' };
+function secundaria(teclas, texto, activa = false) {
+  return { teclas: [].concat(teclas), texto, activa };
+}
 
-  if (arm) {
-    const z = zonaAtaque(arm);
-    c[1] = { valor: `✓ ${ARMADAS[arm.armada].corto}${z ? ' → ' + z : ''}` };
-  }
-  if (librePasa) c[1] = { valor: '✓ Pasa libre' };
-  if (atq) c[2] = { valor: '✓ ' + GOLPES[atq.golpe].nombre };
-  if (atq && atq.resultado) c[3] = { valor: '✓ ' + RESULTADOS[atq.resultado].nombre };
-
-  const m = e.modo;
-  if (m === 'recepcion') c[0] = { valor: 'en curso', actual: true };
-  if (m === 'armadaTipo') c[1] = { valor: 'tipo', actual: true };
-  if (m === 'armadaClic') c[1] = { valor: `${ARMADAS[pendiente.armada].corto}${pendiente.zaguero ? ' · zag.' : ''} · clic`, actual: true };
-  if (m === 'golpe') c[2] = { valor: pendiente.golpe === 'remate' ? 'clic' : `${GOLPES[pendiente.golpe].corto} · clic`, actual: true };
-  if (m === 'resultado') c[3] = { valor: 'tecla', actual: true };
-  return c;
+// Distancia del pase a la red, en palabras
+function textoPase(punto) {
+  const d = CANCHA.red - aMetros(punto)[0];
+  if (d <= 1.5) return 'cerca de la red';
+  if (d <= 3) return 'a media distancia de la red';
+  return 'lejos de la red';
 }
 
 function contenidoEstado(e) {
   const p = e.p;
-  const deshacerTxt = historial.length ? `Deshacer «${historial[historial.length - 1].etiqueta}»` : 'Deshacer';
-  const teclasVideo = [
-    teclaItem('Ctrl+Z', deshacerTxt),
-    teclaItem('Espacio', 'Reproducir / pausar'),
-    `<div class="tecla-item">${kbd('←')}${kbd('→')}<span>−3 s / +3 s</span></div>`,
-    `<div class="tecla-item">${kbd('J')}${kbd('L')}<span>−10 s / +10 s</span></div>`,
-    teclaItem('M', Video.mudo ? 'Activar sonido' : 'Silenciar'),
-  ];
+  const deshacer = historial.length ? secundaria('Ctrl+Z', `deshacer «${historial[historial.length - 1].etiqueta}»`) : null;
   const scoutNom = p ? nombre(p.scouteado) : '';
+  // Orden del diseño en 2 columnas: Q W E a la izquierda, A S R a la derecha
+  const ORDEN_TIPOS = ['primer', 'emergencia', 'alta', 'segunda', 'rapida', 'pipe'];
+  const tiposArmada = (activo = null) => Object.entries(TECLAS.armada)
+    .sort((a, b) => ORDEN_TIPOS.indexOf(a[1]) - ORDEN_TIPOS.indexOf(b[1]))
+    .map(([k, t]) => principal(k.toUpperCase(), ARMADAS[t].nombre === 'Segunda del armador' ? 'Segunda' : ARMADAS[t].nombre === 'Pelota alta' ? 'Alta' : ARMADAS[t].nombre, muestra(t), activo === t));
+  const base = { tipo: 'tecla', titulo: '', contexto: '', principales: [], secundarias: [] };
 
   switch (e.modo) {
     case 'sinPartido':
-      return { tipo: '', titulo: 'Crea el partido', contexto: 'Equipos, fecha y equipo scouteado.', teclas: [], cols: 'c2' };
+      return { ...base, tipo: '', titulo: 'Crea el partido', contexto: 'Equipos, fecha y equipo scouteado.' };
 
     case 'esperando': {
       if (!Video.fuente) {
-        return { tipo: 'video', titulo: 'Carga el video del partido', contexto: 'Link de YouTube o archivo local, en el panel del video.', teclas: [], cols: 'c2' };
+        return { ...base, tipo: 'video', titulo: 'Carga el video', contexto: 'Link de YouTube o archivo local, en el panel del video.',
+          secundarias: [secundaria(nombreTecla(TECLAS.cerrarSinAtaque), 'punto sin jugada')] };
       }
       const set = e.set;
       const ultimo = rallyMostrado(set);
       const rot = rotacionEn(set, set.rallies.length, p.scouteado);
-      const rotTxt = rot ? `armador en P${rot}` : 'fija la rotación con los chips P1–P6';
+      const rotTxt = rot ? `armador en P${rot}` : 'fija la rotación con P1–P6';
+      const sec = [secundaria(nombreTecla(TECLAS.cerrarSinAtaque), 'punto sin jugada'), deshacer].filter(Boolean);
       if (!ultimo) {
-        return {
-          tipo: 'tecla', titulo: `Listo para el set ${set.numero}`,
-          contexto: `Enter marca el saque del primer rally en el segundo actual. Antes, ${rot ? 'revisa: ' + rotTxt : rotTxt}.`,
-          teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c4',
-        };
+        return { ...base, titulo: `Listo para el set ${set.numero}`,
+          contexto: `Enter marca el saque del primer rally. ${rot ? 'Revisa: ' + rotTxt : 'Antes, ' + rotTxt}.`,
+          principales: [principal('Enter', 'Nuevo rally', '', true)], secundarias: sec };
       }
       const n = set.rallies.length;
       const giro = rot && fueSideOut(ultimo, p.scouteado) ? `Side-out: el armador pasa a P${rot}. ` : '';
-      return {
-        tipo: 'tecla', titulo: `Rally ${n} cerrado · ${ultimo.motivo ? MOTIVOS[ultimo.motivo].nombre.toLowerCase() + ' · ' : ''}punto ${nombre(ultimo.gana)}`,
-        contexto: `${giro}Enter abre el rally ${n + 1} en el segundo actual. Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
-        teclas: [teclaItem('Enter', 'Nuevo rally', '', true), teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Punto sin jugada'), ...teclasVideo], cols: 'c4',
-      };
+      return { ...base,
+        titulo: `Rally ${n} cerrado · ${ultimo.motivo ? MOTIVOS[ultimo.motivo].nombre.toLowerCase() + ' · ' : ''}punto ${nombre(ultimo.gana)}`,
+        contexto: `${giro}Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
+        principales: [principal('Enter', `Nuevo rally ${n + 1} en el segundo actual`, '', true)], secundarias: sec };
     }
 
     case 'elegirSaque':
-      return {
-        tipo: 'tecla', titulo: '¿Quién saca el primer rally?',
+      return { ...base, titulo: '¿Quién saca el primer rally?',
         contexto: `Set ${e.set.numero} · el rally parte en ${fmtTiempo(pendiente.elegirSaque.t)}.`,
-        teclas: [teclaItem('1', nombre('propio'), '', true), teclaItem('2', nombre('rival'), '', true), teclaItem('Esc', 'Cancelar')], cols: 'c3',
-      };
+        principales: [principal('1', nombre('propio')), principal('2', nombre('rival'))],
+        secundarias: [secundaria('Esc', 'cancelar')] };
 
     case 'elegirRotacion':
-      return {
-        tipo: 'tecla', titulo: `¿Dónde parte el armador del ${scoutNom}?`,
-        contexto: `Rotación inicial del set ${e.set.numero}. Después rota sola en cada side-out; un clic en P1–P6 corrige.`,
-        teclas: [
-          ...[1, 2, 3, 4, 5, 6].map((n) => teclaItem(String(n), `P${n}`, '', true)),
-          teclaItem('Esc', 'Cancelar'),
-        ],
-        cols: 'c4',
-      };
+      return { ...base, titulo: `¿Dónde parte el armador?`,
+        contexto: `${scoutNom} · rotación inicial del set ${e.set.numero}. Después rota sola en cada side-out.`,
+        principales: [1, 2, 3, 4, 5, 6].map((n) => principal(String(n), `P${n}`)),
+        secundarias: [secundaria('Esc', 'cancelar')] };
 
     case 'setTerminado': {
       const f = e.set.final;
-      return {
-        tipo: 'tecla', titulo: `Set ${e.set.numero} terminado · ${f[0]}–${f[1]}`,
+      return { ...base, titulo: `Set ${e.set.numero} terminado · ${f[0]}–${f[1]}`,
         contexto: `Enter abre el set ${e.set.numero + 1}.`,
-        teclas: [teclaItem('Enter', 'Set nuevo', '', true), ...teclasVideo], cols: 'c3',
-      };
+        principales: [principal('Enter', 'Set nuevo', '', true)], secundarias: [deshacer].filter(Boolean) };
     }
 
     case 'partidoTerminado': {
       const g = setsGanados(p);
-      return {
-        tipo: '', titulo: `Partido terminado · ${g[0]}–${g[1]}`,
-        contexto: 'Ctrl+Z deshace el último punto si hace falta corregir.',
-        teclas: teclasVideo, cols: 'c3',
-      };
+      return { ...base, tipo: '', titulo: `Partido terminado · ${g[0]}–${g[1]}`,
+        contexto: 'Ctrl+Z deshace el último punto si hace falta corregir.', secundarias: [deshacer].filter(Boolean) };
     }
 
     case 'cerrar': {
       const saca = e.r ? e.r.saca : sacaSiguiente(e.set);
-      return {
-        tipo: 'tecla', titulo: e.r ? '¿Quién gana el rally?' : '¿Quién gana el punto?',
-        contexto: (e.r ? `Cierra el rally sin registrar otro ataque del ${scoutNom}.` : 'Suma el punto sin registrar la jugada.') +
-          ' 3–5 guardan el motivo.',
-        teclas: [
-          teclaItem('1', nombre('propio'), '', true),
-          teclaItem('2', nombre('rival'), '', true),
-          teclaItem('3', saca ? `Ace de ${nombre(saca)}` : 'Ace (gana el que saca)'),
-          teclaItem('4', saca ? `Error de saque de ${nombre(saca)}` : 'Error de saque'),
-          teclaItem('5', `Bloqueo del ${scoutNom}`),
-          teclaItem('Esc', 'Cancelar'),
+      return { ...base, titulo: e.r ? '¿Quién gana el rally?' : '¿Quién gana el punto?',
+        contexto: e.r ? `Cierra el rally sin otro ataque del ${scoutNom}; 3–5 guardan el motivo.` : 'Suma el punto sin jugada; 3–5 guardan el motivo.',
+        principales: [
+          principal('1', nombre('propio')),
+          principal('2', nombre('rival')),
+          principal('3', saca ? `Ace de ${nombre(saca)}` : 'Ace'),
+          principal('4', saca ? `Error de saque de ${nombre(saca)}` : 'Error de saque'),
+          principal('5', `Bloqueo del ${scoutNom}`),
         ],
-        cols: 'c3',
-      };
+        secundarias: [secundaria('Esc', 'cancelar')] };
     }
 
     case 'recepcion': {
       const saque = e.r.acciones[0];
-      return {
-        tipo: 'tecla', titulo: `Calificar recepción del ${scoutNom}`,
-        contexto: `Primer contacto tras el saque de ${nombre(saque.equipo)} (${fmtTiempo(saque.t)}).`,
-        teclas: [
-          ...Object.entries(TECLAS.calificacion).map(([k, c]) => teclaItem(k, CALIF[c].nombre, califBadge(c))),
-          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar rally sin ataque'),
-        ],
-        cols: 'c3',
-      };
+      return { ...base, titulo: 'Calificar recepción',
+        contexto: `${scoutNom} recibe el saque de ${nombre(saque.equipo)} (${fmtTiempo(saque.t)}).`,
+        principales: Object.entries(TECLAS.calificacion).map(([k, c]) => principal(k, CALIF[c].nombre, califBadge(c))),
+        secundarias: [secundaria(nombreTecla(TECLAS.cerrarSinAtaque), 'cerrar rally (ace, error de saque…)')] };
     }
 
     case 'armadaTipo': {
       const ult = e.ultima;
-      let fase;
-      if (ult.tipo === 'recepcion') fase = `Side-out tras recepción ${ult.calif}.`;
-      else if (ult.tipo === 'defensa') fase = `Defensa ${ult.calif}.`;
-      else if (ult.tipo === 'recovery') fase = 'Cobertura.';
-      else if (ult.tipo === 'recibeLibre') fase = 'Balón libre recibido.';
-      else if (ult.tipo === 'pasaLibre') fase = 'Pasó libre: la siguiente armada es contraataque.';
-      else if (ult.tipo === 'saque') fase = `Saca ${scoutNom}: la siguiente armada es contraataque.`;
-      else if (ult.resultado === 'rejugado') fase = 'Cobertura tras «rejugado».';
-      else fase = `Contraataque tras «${RESULTADOS[ult.resultado].nombre.toLowerCase()}».`;
       const pase = puedeMarcarPase(e);
       const defensa = puedeCalificarDefensa(e);
-      const extra = pase ? 'Clic donde queda el pase (opcional).' : defensa ? '1–5 califica la defensa (opcional).' : '';
-      return {
-        tipo: pase ? 'tecla · clic opcional' : 'tecla', titulo: 'Tipo de armada',
-        contexto: `${fase} ${extra}`.trim(),
-        teclas: [
-          ...Object.entries(TECLAS.armada).map(([k, t]) => teclaItem(k.toUpperCase(), ARMADAS[t].corto, muestra(t))),
-          teclaItem(nombreTecla(TECLAS.pasaLibre), 'Pasa libre'),
-          teclaItem(nombreTecla(TECLAS.recibeLibre), 'Recibe libre'),
-          teclaItem(nombreTecla(TECLAS.cerrarSinAtaque), 'Cerrar'),
-          ...(defensa ? [teclaItem('1–5', 'Defensa')] : []),
-        ],
-        cols: 'c5',
-      };
+      let fase;
+      if (ult.tipo === 'recepcion') fase = `${scoutNom} recibió ${ult.calif}${ult.punto ? ' con el pase ' + textoPase(ult.punto) : ''}`;
+      else if (ult.tipo === 'defensa') fase = `Defensa ${ult.calif}${ult.punto ? ' con el pase ' + textoPase(ult.punto) : ''}`;
+      else if (ult.tipo === 'recovery') fase = 'Cobertura';
+      else if (ult.tipo === 'recibeLibre') fase = 'Balón libre recibido';
+      else if (ult.tipo === 'pasaLibre') fase = 'Pasó libre: la siguiente armada es contraataque';
+      else if (ult.tipo === 'saque') fase = `Saca ${scoutNom}: la siguiente armada es contraataque`;
+      else if (ult.resultado === 'rejugado') fase = 'Cobertura tras «rejugado»';
+      else fase = `Contraataque tras «${RESULTADOS[ult.resultado].nombre.toLowerCase()}»`;
+      return { ...base, tipo: pase ? 'tecla · clic opcional' : 'tecla', titulo: 'Tipo de armada',
+        contexto: fase + (pase ? ' · clic donde queda el pase (opcional)' : ''),
+        principales: tiposArmada(),
+        secundarias: [
+          defensa ? secundaria(['1', '5'], 'defensa') : null,
+          secundaria([nombreTecla(TECLAS.pasaLibre), nombreTecla(TECLAS.recibeLibre)], 'balón libre'),
+          secundaria(nombreTecla(TECLAS.cerrarSinAtaque), 'cerrar rally'),
+        ].filter(Boolean) };
     }
 
     case 'armadaClic': {
       const tipo = pendiente.armada;
       const color = colorVar(ARMADAS[tipo].variable);
-      const segunda = tipo === 'segunda';
-      const zag = tipo === 'pipe' ? 'pipe: siempre zaguero' : pendiente.zaguero ? 'ataque de zaguero (Z5/Z6/Z1)' : 'ataque delantero (Z4/Z3/Z2)';
-      return {
-        tipo: 'clic en la cancha', icono: mira(color), titulo: segunda ? 'Clic donde toca el armador' : 'Clic donde cae la armada',
-        contexto: `${ARMADAS[tipo].nombre} · ${zag}. La banda define la zona.`,
-        teclas: [
-          teclaItem(nombreTecla(TECLAS.zaguero), 'Zaguero', '', tipo !== 'pipe' && pendiente.zaguero),
-          teclaItem('Esc', 'Cambiar tipo'),
-          teclaItem('Ctrl+Z', deshacerTxt),
-        ],
-        cols: 'c3',
-      };
+      const zag = tipo === 'pipe' ? 'la pipe siempre es de zaguero' : pendiente.zaguero ? 'ataque de zaguero (Z5 · Z6 · Z1)' : 'ataque delantero (Z4 · Z3 · Z2)';
+      return { ...base, tipo: 'clic en la cancha', icono: mira(color),
+        titulo: tipo === 'segunda' ? 'Clic donde toca el armador' : 'Clic donde cae la armada',
+        contexto: `${ARMADAS[tipo].nombre} · ${zag}`,
+        principales: tiposArmada(tipo),
+        secundarias: [
+          secundaria(nombreTecla(TECLAS.zaguero), 'zaguero', tipo !== 'pipe' && pendiente.zaguero),
+          secundaria('Esc', 'volver al tipo'),
+        ] };
     }
 
     case 'golpe': {
       const g = pendiente.golpe;
       const segunda = e.ultima.armada === 'segunda';
-      return {
-        tipo: 'clic en la cancha', icono: mira(colorVar('--texto')), titulo: segunda ? 'Clic donde cae el balón' : 'Clic donde pega el balón',
-        contexto: (segunda ? 'Segunda del armador. ' : '') +
-          (g === 'remate' ? 'Remate por defecto. Modificador antes del clic si fue toque.' : `${GOLPES[g].nombre}. Clic donde pega o cae el balón.`),
-        teclas: [
-          teclaItem('—', 'Remate', '', g === 'remate'),
-          ...Object.entries(TECLAS.golpe).map(([k, v]) => teclaItem(k.toUpperCase(), GOLPES[v].nombre, '', g === v)),
-          teclaItem('Esc', g === 'remate' ? 'Volver al tipo de armada' : 'Volver a remate'),
-          teclaItem('Ctrl+Z', deshacerTxt),
+      return { ...base, tipo: 'clic en la cancha', icono: mira(colorVar('--texto')),
+        titulo: segunda ? 'Clic donde cae el balón' : 'Clic donde pega el balón',
+        contexto: (segunda ? 'Segunda del armador · ' : '') + (g === 'remate' ? 'remate por defecto; C o V antes del clic si fue toque' : `${GOLPES[g].nombre}: clic donde pega o cae`),
+        principales: [
+          principal('—', 'Remate', '', g === 'remate'),
+          ...Object.entries(TECLAS.golpe).map(([k, v]) => principal(k.toUpperCase(), GOLPES[v].nombre, '', g === v)),
         ],
-        cols: 'c3',
-      };
+        secundarias: [secundaria('Esc', g === 'remate' ? 'volver al tipo de armada' : 'volver a remate')] };
     }
 
     case 'resultado': {
@@ -1308,15 +1250,13 @@ function contenidoEstado(e) {
       const arm = e.r.acciones[e.r.acciones.length - 2];
       const calc = textoAtaque(arm, atq, false);
       const z = zonaAtaque(arm);
-      return {
-        tipo: 'tecla', titulo: 'Resultado del ataque',
-        contexto: `${GOLPES[atq.golpe].nombre}${calc ? ' · ' + calc : ''}${z ? ' desde ' + z : ''}.`,
-        teclas: Object.entries(TECLAS.resultado).map(([k, res]) => teclaItem(k, RESULTADOS[res].nombre, simboloMini(res))),
-        cols: 'c3', // 7 teclas: en c4 se cortan las etiquetas; c3 suma una fila sin achicar la cancha
-      };
+      return { ...base, titulo: 'Resultado del ataque',
+        contexto: `${GOLPES[atq.golpe].nombre}${calc ? ' · ' + calc : ''}${z ? ' desde ' + z : ''}`,
+        principales: Object.entries(TECLAS.resultado).map(([k, res]) => principal(k, RESULTADOS[res].nombre, simboloMini(res))),
+        secundarias: [deshacer].filter(Boolean) };
     }
   }
-  return { tipo: '', titulo: '', contexto: '', teclas: [], cols: 'c2' };
+  return base;
 }
 
 // ---------- Plantel: fila de jugadores ----------
@@ -1391,19 +1331,47 @@ function asignarJugador(num) {
 
 function renderEstado() {
   const e = estado();
-  const celdas = celdasPasos(e);
-  const nombres = ['Recepción', 'Armada', 'Golpe', 'Resultado'];
   const c = contenidoEstado(e);
   const aviso = ui.aviso && ui.aviso.hasta > Date.now() ? ui.aviso.texto : null;
+  const kbdTecla = (t) => `<kbd>${esc(t)}</kbd>`;
+  const prin = c.principales.map((x) =>
+    `<div class="tecla-p${x.activa ? ' activa' : ''}">${kbd(x.tecla, x.activa)}${x.extra}<span>${esc(x.texto)}</span></div>`).join('');
+  const sec = c.secundarias.map((x) =>
+    `<span class="item${x.activa ? ' activa' : ''}">${x.teclas.length === 2 && x.texto === 'defensa' ? `${kbdTecla(x.teclas[0])}–${kbdTecla(x.teclas[1])}` : x.teclas.map(kbdTecla).join('')} ${esc(x.texto)}</span>`).join('');
   $('estado').innerHTML =
-    `<div class="pasos">${celdas.map((x, i) =>
-      `<div class="paso${x.actual ? ' actual' : ''}"><span class="etiqueta">${i + 1} ${nombres[i]}</span><span class="valor">${esc(x.valor)}</span></div>`).join('')}</div>` +
-    `<div class="ahora">` +
-      `<span class="etiqueta">Ahora${c.tipo ? ' · ' + esc(c.tipo) : ''}</span>` +
-      `<h2>${c.icono || ''}${esc(c.titulo)}</h2>` +
-      `<p${aviso ? ' style="color:var(--texto)"' : ''}>${esc(aviso || c.contexto)}</p>` +
-    `</div>` +
-    (c.teclas.length ? `<div class="teclas-paso ${c.cols}">${c.teclas.join('')}</div>` : '');
+    `<div class="ahora-cab"><span class="etiqueta">Ahora${c.tipo ? ' · ' + esc(c.tipo) : ''}</span>` +
+    `<button class="atajos" id="btn-atajos" title="Atajos de teclado (?)">${kbd('?')} atajos</button></div>` +
+    `<h2>${c.icono || ''}${esc(c.titulo)}</h2>` +
+    `<p class="contexto${aviso ? ' aviso' : ''}">${esc(aviso || c.contexto)}</p>` +
+    `<div class="ahora-teclas${c.principales.length > 6 ? ' c3' : ''}${c.principales.length === 1 ? ' una' : ''}">${prin}</div>` +
+    (sec ? `<div class="ahora-sec">${sec}</div>` : '');
+}
+
+// ---------- Ayuda «?» ----------
+
+function renderAyuda() {
+  const fila = (teclas, texto) => `<div class="ayuda-fila"><span class="teclas">${teclas.map((t) => kbd(t)).join('')}</span><span>${esc(texto)}</span></div>`;
+  const T = TECLAS;
+  $('ayuda').innerHTML =
+    `<div class="ayuda-cab"><h3>Atajos</h3><span>${kbd('?')} o ${kbd('Esc')} cierra</span></div>` +
+    `<h4>Video</h4>` +
+    fila([nombreTecla(T.reproducir)], 'Reproducir / pausar') +
+    fila([nombreTecla(T.atras), nombreTecla(T.adelante)], `−${SALTO_SEGUNDOS} s / +${SALTO_SEGUNDOS} s`) +
+    fila([nombreTecla(T.atrasLargo), nombreTecla(T.adelanteLargo)], `−${SALTO_LARGO_SEGUNDOS} s / +${SALTO_LARGO_SEGUNDOS} s (también Shift + flechas)`) +
+    fila([T.cuadroAtras, T.cuadroAdelante], 'Cuadro a cuadro (archivo local)') +
+    fila([nombreTecla(T.silencio)], 'Silencio') +
+    `<h4>Captura</h4>` +
+    fila(['Ctrl+Z'], 'Deshacer el último paso') +
+    fila([nombreTecla(T.nuevoRally)], 'Rally nuevo en el segundo actual') +
+    fila([nombreTecla(T.cerrarSinAtaque)], 'Cerrar rally sin ataque') +
+    fila(['Esc'], 'Volver un paso de clic') +
+    fila([nombreTecla(T.foco)], 'Modo foco') +
+    `<div class="ayuda-pie">Las teclas del paso actual están siempre en «Ahora».</div>`;
+}
+
+function alternarAyuda(abrir = $('ayuda').hidden) {
+  if (abrir) renderAyuda();
+  $('ayuda').hidden = !abrir;
 }
 
 // ---------- Símbolos de resultado ----------
@@ -1551,8 +1519,8 @@ function renderCancha() {
   else svg.style.cursor = '';
 }
 
-// Posición del pase (recepción o defensa): cuadrado chico hueco, con línea fina
-// hasta el punto de armada si la hay.
+// Posición del pase (recepción o defensa): rombo chico con el color de su
+// calificación (así la nota se lee en la cancha) y línea fina hasta la armada.
 function dibujarPases(r) {
   let s = '';
   r.acciones.forEach((a, i) => {
@@ -1563,14 +1531,18 @@ function dibujarPases(r) {
       const [ax, ay] = aVB(sig.punto);
       s += `<line x1="${x}" y1="${y}" x2="${ax}" y2="${ay}" stroke="var(--texto-3)" stroke-width="0.5" stroke-dasharray="1.2 1"/>`;
     }
-    s += `<rect x="${x - 1.8}" y="${y - 1.8}" width="3.6" height="3.6" fill="var(--superficie-cancha)" stroke="var(--texto-2)" stroke-width="0.9"/>`;
+    const relleno = { '#': 'var(--calif-perfecta)', '+': 'var(--calif-buena)', '!': 'var(--calif-regular)' }[a.calif];
+    const borde = a.calif === '=' ? 'var(--error)' : relleno || 'var(--calif-mala)';
+    s += `<path d="M${x} ${y - 2.6}L${x + 2.6} ${y} ${x} ${y + 2.6} ${x - 2.6} ${y}Z" fill="${relleno || 'var(--superficie-cancha)'}" stroke="${borde}" stroke-width="0.8"/>`;
+    s += `<text x="${x}" y="${y - 4}" font-size="4.2" fill="var(--texto-2)" text-anchor="middle">pase ${esc(a.calif)}</text>`;
   });
   return s;
 }
 
 function aplicarLeyenda() {
   $('leyenda').hidden = !prefs.leyenda;
-  $('btn-leyenda').classList.toggle('activo', !!prefs.leyenda);
+  $('btn-leyenda').textContent = `${prefs.leyenda ? '▾' : '▸'} símbolos`;
+  $('ley-pase').innerHTML = `<svg class="simbolo" viewBox="0 0 22 10" aria-hidden="true"><path d="M11 1.5L14.5 5 11 8.5 7.5 5Z" fill="var(--calif-buena)"/></svg>pase (color = nota)`;
 }
 
 function renderLeyenda() {
@@ -1588,16 +1560,17 @@ function renderLeyenda() {
 
 function botonIr(t) { return `<button class="ir" data-t="${t}" title="Ir a ${fmtTiempo(t)}">▶</button>`; }
 
-function filaAccion(r, a) {
+// Tipo y detalle de una acción, para el historial del rally
+function detalleAccion(r, a) {
   let tipo = '', det = '';
   const p = partido();
   switch (a.tipo) {
-    case 'saque': tipo = 'Saque'; det = `<span style="font-family:var(--sans)">${esc(nombre(a.equipo))}</span>`; break;
+    case 'saque': tipo = 'Saque'; det = `<span>${esc(nombre(a.equipo))}</span>`; break;
     case 'recepcion':
     case 'defensa':
       tipo = a.tipo === 'recepcion' ? 'Recepción' : 'Defensa';
-      det = `${jugadorBadge(a)}${califBadge(a.calif)}<span style="font-family:var(--sans)">${CALIF[a.calif].nombre}</span>` +
-        (a.punto ? '<span class="calc">· pase marcado</span>' : '');
+      det = `<span>${esc(nombre(a.equipo))}</span>${jugadorBadge(a)}${califBadge(a.calif)}` +
+        (a.punto ? `<span class="calc">pase ${textoPase(a.punto)}</span>` : '');
       break;
     case 'recovery': tipo = 'Cobertura'; det = `<span class="calc">${esc(nombre(p.scouteado))}</span>`; break;
     case 'recibeLibre': tipo = 'Libre'; det = '<span class="calc">recibe balón libre</span>'; break;
@@ -1621,7 +1594,7 @@ function filaAccion(r, a) {
       break;
     }
   }
-  return `<div class="fila fila-accion"><span class="t">${fmtTiempo(a.t)}</span><span>${tipo}</span><span class="detalle">${det}</span>${botonIr(a.t)}</div>`;
+  return { tipo, det };
 }
 
 function jugadorBadge(a) {
@@ -1650,55 +1623,123 @@ function resumenRally(r, p) {
   return s;
 }
 
-function renderListas() {
+// Nombre del paso pendiente, para la última fila tenue del historial
+const PASO_PENDIENTE = { recepcion: 'Recepción', armadaTipo: 'Armada', armadaClic: 'Armada', golpe: 'Ataque', resultado: 'Resultado', cerrar: 'Cierre' };
+
+function renderHistorial() {
+  const cont = $('historial');
   const p = partido();
-  if (!p) {
-    $('rally-titulo').textContent = 'Rally · acciones';
-    $('rally-info').textContent = '';
-    $('rally-acciones').innerHTML = '';
-    $('rally-pie').hidden = true;
-    $('rallies-anteriores').innerHTML = '';
-    $('anteriores-cuenta').textContent = '';
-    return;
-  }
+  if (!p) { cont.innerHTML = ''; return; }
   const set = setActual(p);
   const r = rallyMostrado(set);
-  if (r) {
-    const idx = set.rallies.indexOf(r);
-    const rot = rotacionEn(set, idx, p.scouteado);
-    $('rally-titulo').textContent = `Rally ${idx + 1} · acciones`;
-    $('rally-info').textContent = `saca ${nombre(r.saca)} · ${r.marcador[0]}–${r.marcador[1]}` + (rot ? ` · P${rot}` : '');
-    $('rally-acciones').innerHTML = r.acciones.map((a) => filaAccion(r, a)).join('');
-    const pie = $('rally-pie');
-    pie.hidden = false;
-    if (r.gana) {
-      const m = [r.marcador[0] + (r.gana === 'propio' ? 1 : 0), r.marcador[1] + (r.gana === 'rival' ? 1 : 0)];
-      pie.innerHTML = `<span>Gana <b>${esc(nombre(r.gana))}</b>${r.motivo ? ` <span class="tenue">· ${MOTIVOS[r.motivo].nombre.toLowerCase()}</span>` : ''}</span><span class="mono">${m[0]}–${m[1]}</span>`;
-    } else {
-      pie.innerHTML = `<span class="tenue">En curso</span><span class="mono">${r.marcador[0]}–${r.marcador[1]}</span>`;
-    }
-    const lista = $('rally-acciones');
-    lista.scrollTop = lista.scrollHeight;
-  } else {
-    $('rally-titulo').textContent = 'Rally · acciones';
-    $('rally-info').textContent = '';
-    $('rally-acciones').innerHTML = '<div class="vacio">Todavía no hay rallies en este set.</div>';
-    $('rally-pie').hidden = true;
+  if (!r) { cont.innerHTML = `<div class="hist-cab"><b>Set ${set.numero}</b>todavía sin rallies</div>`; return; }
+  const idx = set.rallies.indexOf(r);
+  const rot = rotacionEn(set, idx, p.scouteado);
+  const e = estado();
+  const filas = r.acciones.map((a) => {
+    const { tipo, det } = detalleAccion(r, a);
+    return `<div class="hist-fila"><span class="t">${fmtTiempo(a.t)}</span><span>${tipo}</span><span class="detalle">${det}</span></div>`;
+  }).join('');
+  const pendiente = e.r === r && PASO_PENDIENTE[e.modo]
+    ? `<div class="hist-fila pendiente"><span class="t">—</span><span>${PASO_PENDIENTE[e.modo]}</span><span>en espera</span></div>` : '';
+  let pie = '';
+  if (r.gana) {
+    const m = [r.marcador[0] + (r.gana === 'propio' ? 1 : 0), r.marcador[1] + (r.gana === 'rival' ? 1 : 0)];
+    pie = `<div class="hist-pie">Gana ${esc(nombre(r.gana))}${r.motivo ? ' · ' + MOTIVOS[r.motivo].nombre.toLowerCase() : ''} · ${m[0]}–${m[1]}</div>`;
   }
+  cont.innerHTML = `<div class="hist-cab"><b>Rally ${idx + 1}</b>saca ${esc(nombre(r.saca))} · ${r.marcador[0]}–${r.marcador[1]}${rot ? ' · P' + rot : ''}</div>` +
+    filas + pendiente + pie;
+  cont.scrollTop = cont.scrollHeight;
+}
 
-  $('anteriores-titulo').textContent = `Rallies anteriores · set ${set.numero}`;
+// Cadena de armadas de un rally: «Pipe · Z6 → Alta · Z4»
+function cadenaArmadas(r) {
+  const js = jugadas(r);
+  if (!js.length) return '';
+  return js.map((j) => `${muestra(j.armada.armada)}<span>${ARMADAS[j.armada.armada].corto} · ${zonaAtaque(j.armada)}</span>`)
+    .join('<span class="sep-cadena">→</span>');
+}
+
+function textoResultadoRally(r) {
+  const res = jugadas(r).filter((j) => j.ataque && j.ataque.resultado).map((j) => RESULTADOS[j.ataque.resultado].nombre);
+  if (r.motivo) res.push(MOTIVOS[r.motivo].nombre.toLowerCase());
+  else if (res.length && !RESULTADOS[jugadas(r).filter((j) => j.ataque).pop().ataque.resultado || 'defendido'].gana) res.push('cerrado con G');
+  if (!res.length) {
+    const rec = r.acciones.find((a) => a.tipo === 'recepcion');
+    return rec && rec.calif === '=' ? 'error de recepción' : r.acciones.length === 1 ? 'sin jugada' : '—';
+  }
+  return res.join(' · ');
+}
+
+function resumenUltimoRally(set, p) {
   const cerrados = set.rallies.filter((x) => x.gana);
-  $('anteriores-cuenta').textContent = `${cerrados.length} ${cerrados.length === 1 ? 'rally' : 'rallies'}`;
-  const anteriores = set.rallies.map((x, i) => ({ x, i })).filter(({ x }) => x.gana && x !== r).reverse();
-  const corto = (eq) => nombre(eq).slice(0, 3);
-  $('rallies-anteriores').innerHTML = anteriores.length
-    ? anteriores.map(({ x, i }) => {
-      const rot = rotacionEn(set, i, p.scouteado);
-      return `<div class="fila fila-rally"><span class="tenue">${i + 1}</span><span class="tenue">${fmtMinuto(x.t)}</span>` +
-        `<span class="resumen">${resumenRally(x, p)}</span><span class="tenue">${rot ? 'P' + rot : '—'}</span>` +
-        `<span class="${x.gana === p.scouteado ? 'gana-scout' : 'gana-otro'}">${esc(corto(x.gana))}</span>${botonIr(x.t)}</div>`;
-    }).join('')
-    : '<div class="vacio">Aquí aparecen los rallies cerrados del set.</div>';
+  const r = cerrados[cerrados.length - 1];
+  if (!r) return '';
+  const n = set.rallies.indexOf(r) + 1;
+  const ult = jugadas(r).filter((j) => j.ataque).pop();
+  const como = r.motivo ? MOTIVOS[r.motivo].nombre.toLowerCase()
+    : ult && ult.ataque.resultado ? `${RESULTADOS[ult.ataque.resultado].nombre.toLowerCase()} desde ${zonaAtaque(ult.armada)}` : 'punto';
+  return `R${n} · ${nombre(r.gana, p)} · ${como}`;
+}
+
+function filaAnterior(set, r, i, p) {
+  const rot = rotacionEn(set, i, p.scouteado);
+  const rec = r.acciones.find((a) => a.tipo === 'recepcion');
+  const cadena = cadenaArmadas(r);
+  return `<div class="fila-ant"><span class="num">${i + 1}</span><span class="t">${fmtMinuto(r.t)}</span>` +
+    `<span>${esc(nombre(r.saca))}</span><span class="tenue">${rot ? 'P' + rot : '—'}</span>` +
+    `<span>${rec ? califBadge(rec.calif) : ''}</span>` +
+    `<span class="cadena">${cadena || `<span class="tenue">sin ataque de ${esc(nombre(p.scouteado))}</span>`}</span>` +
+    `<span>${esc(textoResultadoRally(r))}</span>` +
+    `<span class="${r.gana === p.scouteado ? 'gana-scout' : 'gana-otro'}">${esc(nombre(r.gana))}</span>${botonIr(r.t)}</div>`;
+}
+
+function renderAnteriores() {
+  const p = partido();
+  const cab = $('anteriores-cab');
+  if (!p) { cab.innerHTML = ''; $('anteriores-lista').innerHTML = ''; return; }
+  const set = setActual(p);
+  const total = p.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
+  const abierta = !!prefs.listaAbierta;
+  const actual = indiceRallyVigente(set) + 1;
+  cab.innerHTML = `<span class="flecha">${abierta ? '▾' : '▸'}</span><span class="titulo">${total} ${total === 1 ? 'rally anterior' : 'rallies anteriores'}</span>` +
+    (abierta
+      ? `<span class="pista">▶ salta al video</span><button class="btn-tenue chico volver" id="btn-volver-rally">Volver al rally ${actual}</button>`
+      : `<span class="resumen-pleg">${esc(resumenUltimoRally(set, p))}</span>`);
+  $('nota-volver').textContent = `Al cerrarla vuelve al rally en curso (R${actual}).`;
+  if (!abierta) { $('anteriores-lista').innerHTML = ''; return; }
+
+  let html = '';
+  [...p.sets].reverse().forEach((st) => {
+    const filas = st.rallies.map((r, i) => ({ r, i })).filter(({ r }) => r.gana).reverse();
+    const enCurso = st === set && !st.final;
+    if (st === set) {
+      html += `<div class="grupo-set">Set ${st.numero}${enCurso ? ' · en curso' : ''}</div>`;
+      html += filas.length ? filas.map(({ r, i }) => filaAnterior(st, r, i, p)).join('') : '<div class="vacio">Sin rallies cerrados en este set.</div>';
+    } else {
+      const m = st.final || marcadorTras(st);
+      const ganaSet = m[0] > m[1] ? 'propio' : 'rival';
+      const abiertoSet = !!(ui.setsAbiertos && ui.setsAbiertos[st.numero]);
+      html += `<div class="set-plegado" data-set-plegado="${st.numero}"><span class="flecha">${abiertoSet ? '▾' : '▸'}</span>` +
+        `Set ${st.numero} · ${esc(nombre(ganaSet))} ${Math.max(...m)}–${Math.min(...m)} · ${filas.length} rallies</div>`;
+      if (abiertoSet) html += filas.map(({ r, i }) => filaAnterior(st, r, i, p)).join('');
+    }
+  });
+  $('anteriores-lista').innerHTML = html;
+}
+
+function alternarListaAnteriores(abrir = !prefs.listaAbierta) {
+  if (abrir) ui.tiempoAntesLista = Video.tiempo();
+  prefs.listaAbierta = abrir;
+  guardarPrefs();
+  document.body.classList.toggle('lista-abierta', abrir);
+  renderAnteriores();
+}
+
+function volverAlRally() {
+  const t = ui.tiempoAntesLista;
+  alternarListaAnteriores(false);
+  if (t != null && Video.fuente) Video.saltar(t);
 }
 
 // ---------- Video: panel de carga y controles ----------
@@ -1713,16 +1754,21 @@ function renderCargaVideo() {
   $('carga-texto').textContent = local
     ? `Este partido usa «${p.video.nombre}». Ábrelo otra vez desde tu equipo; el archivo nunca se sube.`
     : 'Pega el link de YouTube o abre el archivo descargado. El archivo no se sube a ningún lado.';
-  const chip = $('chip-fuente');
-  chip.hidden = !Video.fuente;
   renderSonido();
-  if (Video.fuente) chip.textContent = Video.fuente === 'youtube' ? 'YouTube' : `Archivo local · ${p && p.video ? p.video.nombre : ''}`;
 }
+
+const ICONOS = {
+  play: '<svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><path d="M2 1.5v13l11-6.5z" fill="currentColor"/></svg>',
+  pausa: '<svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><path d="M2 1.5h3.5v13H2zM8.5 1.5H12v13H8.5z" fill="currentColor"/></svg>',
+  sonido: '<svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true"><path d="M1.5 5.5h3l4-3.5v12l-4-3.5h-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M12 5a4 4 0 0 1 0 6M14.2 3a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  mudo: '<svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true"><path d="M1.5 5.5h3l4-3.5v12l-4-3.5h-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M12 5.5l5 5M17 5.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  anterior: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2v10M12 2L5 7l7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.4"/></svg>',
+  siguiente: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M12 2v10M2 2l7 5-7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.4"/></svg>',
+};
 
 function renderSonido() {
   const b = $('btn-sonido');
-  b.hidden = !Video.fuente;
-  b.innerHTML = `${Video.mudo ? '🔇 Sin sonido' : '🔊 Sonido'} <kbd>M</kbd>`;
+  b.innerHTML = Video.mudo ? ICONOS.mudo : ICONOS.sonido;
   b.title = Video.mudo ? 'Activar sonido (M)' : 'Silenciar (M)';
 }
 
@@ -1731,14 +1777,12 @@ function alternarSilencio() {
   prefs.silencio = Video.mudo;
   guardarPrefs();
   renderSonido();
-  renderEstado();
 }
 
 function renderControles() {
-  $('grupo-velocidad').innerHTML = VELOCIDADES
+  $('btn-velocidad').textContent = `${fmtVelocidad(Video.vel)} ▾`;
+  $('menu-velocidad').innerHTML = VELOCIDADES.slice().reverse()
     .map((v) => `<button data-vel="${v}" class="${v === Video.vel ? 'activo' : ''}">${fmtVelocidad(v)}</button>`).join('');
-  const cuadro = Video.puedeCuadro();
-  for (const id of ['btn-cuadro-atras', 'btn-cuadro-adelante']) $(id).disabled = !cuadro;
   $('pausar-al-marcar').checked = !!prefs.pausarAlMarcar;
 }
 
@@ -1747,10 +1791,14 @@ function actualizarVideoUI() {
   const d = Video.duracion();
   const pausado = Video.pausado();
   $('tiempo-grande').textContent = fmtTiempo(t);
-  $('lt-actual').textContent = fmtTiempo(t);
   $('lt-duracion').textContent = fmtMinuto(d);
   $('badge-pausado').hidden = !Video.fuente || !pausado;
-  $('play-texto').textContent = pausado ? '▶ Reproducir' : '❚❚ Pausar';
+  if (ui.iconoPlay !== pausado) {
+    ui.iconoPlay = pausado;
+    $('btn-play').innerHTML = pausado ? ICONOS.play : ICONOS.pausa;
+    renderLateralCtl();
+  }
+  seguirClips(t);
   const frac = d ? Math.min(1, t / d) : 0;
   $('barra-avance').style.width = `${frac * 100}%`;
   $('barra-cabezal').style.left = `${frac * 100}%`;
@@ -1773,16 +1821,14 @@ function actualizarVideoUI() {
 const stats = {
   partidos: null, // Set de ids a sumar; null = solo el partido abierto
   filtros: { set: [], rot: [], pase: [], fase: [], armada: [], zona: [], golpe: [], resultado: [], jugador: [] },
-  vista: 'armador', // armador | ataque | sideout | recepcion
+  vista: 'equipo', // equipo | ataque | sideout | saque
   mapa: 'trayectorias', // trayectorias | calor
-  filtrosAbiertos: false,
 };
 
 const VISTAS = {
-  armador: 'Armador',
+  equipo: 'Equipo',
   ataque: 'Ataque',
-  sideout: 'Side-out',
-  recepcion: 'Recepción',
+  sideout: 'Side-out y recepción',
   saque: 'Saque y bloqueo',
 };
 
@@ -1797,7 +1843,7 @@ const DIMS_DATOS = {
   rallies: ['set', 'rot', 'pase'],
   todos: ['set', 'rot'],
 };
-const DATOS_VISTA = { armador: 'jugadas', ataque: 'jugadas', sideout: 'rallies', recepcion: 'recepciones', saque: 'todos' };
+const DATOS_VISTA = { equipo: 'jugadas', ataque: 'jugadas', sideout: 'rallies', saque: 'todos' };
 
 function equipoScout(p) { return slug(nombre(p.scouteado, p)); }
 
@@ -1897,7 +1943,8 @@ function fijarFiltros(obj) {
 }
 
 function pct(a, b) { return b ? Math.round((100 * a) / b) : null; }
-function txtPct(n) { return n == null ? '—' : `${n}%`; }
+const ESPACIO_FINO = '\u202F';
+function txtPct(n) { return n == null ? '—' : `${n}${ESPACIO_FINO}%`; }
 
 // Sombra según proporción: los colores salen del tema (claro al imprimir, oscuro en pantalla)
 function celda(frac, contenido, attrs = '', clase = '') {
@@ -1921,7 +1968,7 @@ function resumenAtaques(lista) {
   return { n: lista.length, conRes: conRes.length, pts, malos, ef };
 }
 
-function txtEficacia(ef) { return ef == null ? '—' : (ef > 0 ? '+' : '') + ef + '%'; }
+function txtEficacia(ef) { return ef == null ? '—' : (ef > 0 ? '+' : '') + ef + ESPACIO_FINO + '%'; }
 
 // Indicadores generales con los filtros activos
 function indicadores(d) {
@@ -1947,13 +1994,15 @@ function tablaZonas(filas, titulo) {
   const cab = `<tr><th>${titulo}</th>${ORDEN_ZONAS.map((z) => `<th>${z}</th>`).join('')}<th>n</th></tr>`;
   const cuerpo = filas.map((f) => {
     const n = f.jugadas.length;
-    const celdas = ORDEN_ZONAS.map((z) => {
-      const c = f.jugadas.filter((j) => j.zona === z).length;
+    const cuentas = ORDEN_ZONAS.map((z) => f.jugadas.filter((j) => j.zona === z).length);
+    const max = Math.max(...cuentas);
+    const celdas = ORDEN_ZONAS.map((z, i) => {
+      const c = cuentas[i];
       const filtro = { ...f.filtro, zona: z };
       return celda(n ? c / n : 0, c ? txtPct(pct(c, n)) : '·',
-        `data-fijar='${JSON.stringify(filtro)}' title="${c} de ${n}"`, ` clic${marcaFiltro(filtro)}`);
+        `data-fijar='${JSON.stringify(filtro)}' title="${c} de ${n}"`, ` clic${c && c === max ? ' max' : ''}${marcaFiltro(filtro)}`);
     }).join('');
-    return `<tr><th class="clic${marcaFiltro(f.filtro)}" data-fijar='${JSON.stringify(f.filtro)}'>${f.etiqueta}</th>${celdas}<td class="num tenue">${n}</td></tr>`;
+    return `<tr${f.etiqueta === 'Total' ? ' class="total"' : ''}><th class="clic${marcaFiltro(f.filtro)}" data-fijar='${JSON.stringify(f.filtro)}'>${f.etiqueta}</th>${celdas}<td class="num tenue">${n}</td></tr>`;
   }).join('');
   return `<table class="tabla">${cab}${cuerpo}</table>`;
 }
@@ -2050,8 +2099,8 @@ function partesSideout(d) {
     const so = lista.filter((r) => r.sideOut).length;
     const pp = lista.filter((r) => r.primerPunto).length;
     const p100 = pct(so, n);
-    return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
-      `<td class="num tenue">${n}</td><td class="num">${so}</td><td class="num"><b>${txtPct(p100)}</b></td>` +
+    return `<tr${etiqueta === 'Total' ? ' class="total"' : ''}><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
+      `<td class="num">${n}</td><td class="num">${so}</td><td class="num max">${txtPct(p100)}</td>` +
       `<td class="barra-celda"><span style="width:${p100 || 0}%"></span></td><td class="num">${txtPct(pct(pp, n))}</td></tr>`;
   };
   const cab = (t) => `<tr><th>${t}</th><th>Recibe</th><th>Gana</th><th>Side-out</th><th></th><th>1er ataque</th></tr>`;
@@ -2081,7 +2130,7 @@ function partesRecepcion(d) {
     const k = (c) => lista.filter((r) => r.pase === c).length;
     return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th><td class="num tenue">${m}</td>` +
       CALIFS.map((c) => celda(m ? k(c) / m : 0, k(c) || '·')).join('') +
-      `<td class="num"><b>${txtPct(pct(k('#') + k('+'), m))}</b></td><td class="num">${txtPct(pct(k('='), m))}</td></tr>`;
+      `<td class="num max">${txtPct(pct(k('#') + k('+'), m))}</td><td class="num">${txtPct(pct(k('='), m))}</td></tr>`;
   };
   const cab = (t) => `<tr><th>${t}</th><th>n</th>${CALIFS.map((c) => `<th>${c}</th>`).join('')}<th>Posit.</th><th>Error</th></tr>`;
   const conJugador = [...new Set(rs.filter((r) => r.jugador != null).map((r) => r.jugador))].sort((a, b) => a - b);
@@ -2118,27 +2167,6 @@ function partesSaque(d, p) {
 }
 
 // ---------- Vistas en pantalla ----------
-
-function vistaArmador(d) {
-  const a = partesArmador(d, partido());
-  return `<p class="stats-nota">${a.n} armadas del armador (sin emergencia ni segunda). Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
-    `<h3>Por rotación</h3>${a.porRot}` +
-    `<h3>Por calidad de pase <span class="tenue">(recepción y defensa)</span></h3>${a.porPase}` +
-    `<h3>Tipo de armada</h3>${a.porTipo}` +
-    a.emergencias +
-    `<h3>Segunda del armador por rotación <span class="tenue">(% sobre armadas con pase # o +)</span></h3>${a.segunda}` +
-    a.cancha;
-}
-
-function vistaAtaque(d) {
-  const a = partesAtaque(d, partido(), stats.mapa);
-  return `<p class="stats-nota">${a.n} ataques. Dirección sobre remates; toque sobre el total de la fila. Eficacia = (puntos − errores − bloqueos) / ataques con resultado.</p>` +
-    a.tabla +
-    `<div class="fila-titulo"><h3>Impactos</h3><div class="selector" id="selector-mapa">` +
-    `<button data-mapa="trayectorias" class="${stats.mapa === 'trayectorias' ? 'activo' : ''}">Trayectorias</button>` +
-    `<button data-mapa="calor" class="${stats.mapa === 'calor' ? 'activo' : ''}">Calor</button></div></div>` +
-    a.cancha;
-}
 
 function vistaSideout(d) {
   const a = partesSideout(d);
@@ -2256,117 +2284,490 @@ function imprimirResumen() {
   window.print();
 }
 
-// ---------- Panel de filtros y alcance ----------
+// ---------- Filtros: barra segmentada siempre visible + «Más filtros» ----------
+
+// Filtros sin un grupo (la ficha por rotación necesita todas las rotaciones)
+function filtrarSin(lista, tipo, dimExcluida) {
+  const dims = DIMS_DATOS[tipo].filter((d) => d !== dimExcluida && stats.filtros[d].length);
+  return lista.filter((x) => dims.every((d) => stats.filtros[d].includes(x[d])));
+}
+
+const DIMS_MAS = ['armada', 'zona', 'golpe', 'resultado', 'jugador'];
+
+function mismoConjunto(a, b) { return a.length === b.length && a.every((x) => b.includes(x)); }
+
+function gruposSegmentados(d) {
+  const sets = [...new Set(d.jugadas.map((j) => j.set).concat(d.todos.map((r) => r.set)))].sort((a, b) => a - b);
+  return [
+    { k: 'rot', nombre: 'Rotación', opciones: [{ t: 'Todas', v: [] }, ...[1, 2, 3, 4, 5, 6].map((n) => ({ t: `P${n}`, v: [n] }))] },
+    { k: 'fase', nombre: 'Fase', opciones: [{ t: 'Todo', v: [] }, { t: 'Side-out', v: ['recepcion'] }, { t: 'Contra', v: ['contra', 'recovery', 'libre'] }] },
+    { k: 'pase', nombre: 'Pase', opciones: [{ t: 'Todo', v: [] }, { t: 'Bueno # +', v: ['#', '+'] }, { t: 'Malo ! -', v: ['!', '-'] }] },
+    { k: 'set', nombre: 'Set', opciones: [{ t: 'Todos', v: [] }, ...sets.map((n) => ({ t: String(n), v: [n] }))] },
+  ];
+}
+
+// Texto corto de los filtros activos («P1 · Side-out · 2 más»)
+function textoFiltrosActivos(d) {
+  const partes = [];
+  for (const g of gruposSegmentados(d)) {
+    const actual = stats.filtros[g.k];
+    if (!actual.length) continue;
+    const op = g.opciones.find((o) => mismoConjunto(o.v, actual));
+    partes.push(op ? (g.k === 'set' ? `Set ${op.t}` : g.k === 'pase' ? `pase ${op.t.split(' ')[0].toLowerCase()}` : op.t) : `${g.nombre.toLowerCase()}: varios`);
+  }
+  const mas = DIMS_MAS.flatMap((k) => stats.filtros[k].map((v) => textoFiltro(k, v)));
+  if (mas.length > 2) partes.push(`${mas.length} filtros más`);
+  else partes.push(...mas);
+  return partes;
+}
 
 function renderFiltros(d) {
-  const sets = [...new Set(d.jugadas.map((j) => j.set).concat(d.rallies.map((r) => r.set)))].sort();
-  const jugadores = [...new Set(d.jugadas.concat(d.recepciones).map((x) => x.jugador).filter((x) => x != null))].sort((a, b) => a - b);
-  const aplican = DIMS_DATOS[DATOS_VISTA[stats.vista]];
+  const html = gruposSegmentados(d).map((g) => {
+    const actual = stats.filtros[g.k];
+    const op = g.opciones.find((o) => mismoConjunto(o.v, actual));
+    const botones = g.opciones.map((o) =>
+      `<button data-seg='${JSON.stringify({ k: g.k, v: o.v })}' class="${op === o ? 'activo' : ''}">${esc(o.t)}</button>`).join('') +
+      (op ? '' : '<button class="activo" disabled>Varios</button>');
+    return `<div class="seg-grupo${actual.length ? ' filtrado' : ''}"><span class="etiqueta">${g.nombre}</span><div class="segmento">${botones}</div></div>`;
+  }).join('');
+  const mas = DIMS_MAS.reduce((n, k) => n + stats.filtros[k].length, 0);
+  $('stats-filtros').innerHTML = html +
+    `<button class="btn-mas${stats.masFiltros ? ' activo' : ''}" id="btn-mas-filtros">+ Más filtros${mas ? ` (${mas})` : ''}</button>` +
+    (hayFiltros() ? '<button class="btn-tenue limpiar" id="limpiar-filtros">Limpiar</button>' : '');
+
+  const jugadores = [...new Set(d.jugadas.map((x) => x.jugador).filter((x) => x != null))].sort((a, b) => a - b);
   const filas = [
-    ['set', 'Set', sets, (v) => v],
-    ['rot', 'Rotación', [1, 2, 3, 4, 5, 6], (v) => `P${v}`],
-    ['pase', 'Pase', CALIFS, (v) => v],
-    ['fase', 'Fase', Object.keys(FASES), (v) => FASES[v]],
     ['armada', 'Armada', Object.keys(ARMADAS), (v) => `${muestra(v)}${ARMADAS[v].corto}`],
     ['zona', 'Zona', ORDEN_ZONAS, (v) => v],
     ['golpe', 'Golpe', Object.keys(GOLPES), (v) => (v === 'remate' ? 'Remate' : GOLPES[v].corto)],
     ['resultado', 'Resultado', Object.keys(RESULTADOS), (v) => RESULTADOS[v].nombre],
     ['jugador', 'Jugador', jugadores, (v) => `#${v}`],
   ];
-  const activos = filas.flatMap(([k, , , et]) => stats.filtros[k].map((v) =>
-    `<button class="fchip activo" data-dim="${k}" data-val='${JSON.stringify(v)}' title="Quitar filtro">${et(v)} ✕</button>`));
-  const n = activos.length;
-  $('stats-filtros').innerHTML =
-    `<div class="panel-cab"><span class="etiqueta fuerte">Filtros${n ? ` · ${n} activo${n === 1 ? '' : 's'}` : ''}</span>` +
-    `<div style="display:flex;gap:6px"><button class="btn chico" id="limpiar-filtros" ${n ? '' : 'disabled'}>Limpiar</button>` +
-    `<button class="btn chico" id="plegar-filtros">${stats.filtrosAbiertos ? 'Ocultar' : 'Mostrar todos'}</button></div></div>` +
-    (stats.filtrosAbiertos ? '' : `<div class="filtros-activos">${n ? activos.join('') : '<span class="tenue">Sin filtros: se muestran todas las jugadas. Clic en una celda o «Mostrar todos».</span>'}</div>`) +
-    (!stats.filtrosAbiertos ? '' : `<div class="filtros">${filas.map(([k, nom, vals, et]) =>
-      `<div class="filtro-fila${aplican.includes(k) ? '' : ' no-aplica'}"><span class="etiqueta">${nom}</span><div class="filtro-chips">` +
-      (vals.length ? vals.map((v) =>
-        `<button class="fchip${stats.filtros[k].includes(v) ? ' activo' : ''}" data-dim="${k}" data-val='${JSON.stringify(v)}'>${et(v)}</button>`).join('')
-        : '<span class="tenue">—</span>') +
-      `</div></div>`).join('')}</div>`);
+  $('mas-filtros').hidden = !stats.masFiltros;
+  $('mas-filtros').innerHTML = `<div class="filtros">${filas.map(([k, nom, vals, et]) =>
+    `<div class="filtro-fila"><span class="etiqueta">${nom}</span><div class="filtro-chips">` +
+    (vals.length ? vals.map((v) =>
+      `<button class="fchip${stats.filtros[k].includes(v) ? ' activo' : ''}" data-dim="${k}" data-val='${JSON.stringify(v)}'>${et(v)}</button>`).join('')
+      : '<span class="tenue">—</span>') +
+    `</div></div>`).join('')}</div>`;
 }
 
-function renderAlcance() {
-  const p = partido();
-  const compat = partidosCompatibles();
+function alternarMasFiltros(abrir = !stats.masFiltros) {
+  stats.masFiltros = abrir;
+  renderStats();
+}
+
+// ---------- Tira del video plegado y alcance ----------
+
+function renderTira() {
   const incl = partidosIncluidos();
-  $('stats-alcance').innerHTML =
-    `<div><span class="etiqueta">Scouteando</span> <b>${esc(nombre(p.scouteado))}</b>` +
-    `<div class="tenue mono">${incl.length === 1 ? esc(`${nombre('rival', incl[0])} vs ${nombre('propio', incl[0])} · ${fmtFecha(incl[0].fecha)}`) : `${incl.length} partidos sumados`}` +
-    ` · ${compat.length} ${compat.length === 1 ? 'partido guardado' : 'partidos guardados'} de este equipo</div></div>` +
-    `<div class="alcance-botones"><button class="btn" id="elegir-partidos">Elegir partidos…</button>` +
-    `<button class="btn" id="resumen-pdf" title="Arma un resumen y abre el diálogo de impresión: elige «Guardar como PDF»">Resumen PDF</button></div>`;
+  const titulo = incl.length === 1
+    ? `${tituloPartido(incl[0])} · ${incl[0].sets.filter((st) => st.rallies.length).length} sets`
+    : `${incl.length} partidos sumados · ${nombre(partido().scouteado)}`;
+  $('stats-tira').innerHTML =
+    (ui.lateral ? '' : '<button class="btn-tenue fondo" id="btn-mostrar-video">▶ Mostrar video</button>') +
+    `<span class="titulo">${esc(titulo)}</span>` +
+    `<button class="btn-tenue derecha" id="elegir-partidos">Elegir partidos…</button>`;
+}
+
+// ---------- Pestaña Equipo ----------
+
+const ARMADOR_MEDIA = [84, 66];
+const DESTINO_ZONA = { Z4: [82, 9], Z3: [80, 40], Z2: [84, 87], Z5: [48, 12], Z6: [48, 45], Z1: [48, 80] };
+let idSvg = 0;
+
+// Tipo de armada que más aparece en una lista (define el color de la flecha)
+function armadaPredominante(lista) {
+  const c = {};
+  for (const j of lista) c[j.armada] = (c[j.armada] || 0) + 1;
+  return Object.keys(c).sort((a, b) => c[b] - c[a])[0];
+}
+
+function marcadores(id) {
+  return `<defs>${Object.entries(ARMADAS).map(([t, a]) =>
+    `<marker id="${id}-${t}" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" markerUnits="userSpaceOnUse" orient="auto">` +
+    `<path d="M0 0L10 5 0 10z" fill="var(${a.variable})"/></marker>`).join('')}</defs>`;
+}
+
+// Curva cuadrática con el control desplazado `desvio` unidades en perpendicular, hacia `haciaX`
+function curva(a, b, desvio, lado = -1) {
+  const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const largo = Math.hypot(dx, dy) || 1;
+  let nx = -dy / largo, ny = dx / largo;
+  if (Math.sign(nx || 1) !== lado) { nx = -nx; ny = -ny; }
+  return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}Q${(mx + nx * desvio).toFixed(1)} ${(my + ny * desvio).toFixed(1)} ${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+}
+
+// Media cancha del equipo scouteado (red a la derecha) con flechas armador → zona
+function mediaCancha(js, { ancho, alto, k, etiquetas, armador = true }) {
+  const id = `mc${++idSvg}`;
+  const n = js.length;
+  const porZona = Object.keys(DESTINO_ZONA).map((z) => ({ z, lista: js.filter((j) => j.zona === z) })).filter((x) => x.lista.length);
+  const max = Math.max(0, ...porZona.map((x) => x.lista.length));
+  let s = marcadores(id);
+  s += `<rect x="0" y="0" width="90" height="90" fill="var(--superficie-cancha)" stroke="var(--linea-cancha)" stroke-width="0.5"/>`;
+  s += `<line x1="60" y1="0" x2="60" y2="90" stroke="var(--linea-cancha)" stroke-width="0.35" opacity="0.7"/>`;
+  for (const y of [30, 60]) s += `<line x1="0" y1="${y}" x2="90" y2="${y}" stroke="var(--borde-control)" stroke-width="0.3" stroke-dasharray="1.4 1.4"/>`;
+  [[3, [5, 6, 1]], [63, [4, 3, 2]]].forEach(([x, nums]) => nums.forEach((num, i) => {
+    s += `<text x="${x}" y="${i * 30 + 27}" font-size="4.2" fill="var(--zona-numero)">${num}</text>`;
+  }));
+  s += `<line x1="90" y1="-6" x2="90" y2="96" stroke="var(--texto-2)" stroke-width="1.3"/>`;
+  // Las flechas finas primero, la mayoritaria encima
+  porZona.sort((a, b) => a.lista.length - b.lista.length).forEach(({ z, lista }) => {
+    const p100 = (100 * lista.length) / n;
+    const tipo = armadaPredominante(lista);
+    const mayor = lista.length === max;
+    s += `<path d="${curva(ARMADOR_MEDIA, DESTINO_ZONA[z], 11, -1)}" fill="none" stroke="var(${ARMADAS[tipo].variable})" ` +
+      `stroke-width="${(0.6 + p100 * k).toFixed(2)}" stroke-linecap="round" opacity="${mayor ? 1 : 0.42}" marker-end="url(#${id}-${tipo})"/>`;
+  });
+  porZona.forEach(({ z, lista }) => {
+    const mayor = lista.length === max;
+    if (etiquetas === 'mayor' && !mayor) return;
+    const [x, y] = DESTINO_ZONA[z];
+    const delantera = x > 70;
+    s += `<text x="${delantera ? x - 5 : x}" y="${y < 20 ? y - 3 : y + 7}" font-size="5.6" text-anchor="${delantera ? 'end' : 'middle'}" ` +
+      `fill="var(${mayor ? '--texto' : '--texto-3'})" font-weight="${mayor ? 600 : 400}">${z} ${txtPct(Math.round((100 * lista.length) / n))}</text>`;
+  });
+  s += `<circle cx="${ARMADOR_MEDIA[0]}" cy="${ARMADOR_MEDIA[1]}" r="2.8" fill="var(--fondo)" stroke="var(--texto)" stroke-width="1.2"/>`;
+  if (armador) s += `<text x="${ARMADOR_MEDIA[0] - 4}" y="${ARMADOR_MEDIA[1] + 9}" font-size="4.4" fill="var(--texto-3)" text-anchor="middle">armador</text>`;
+  return `<svg class="media-cancha" width="${ancho}" height="${alto}" viewBox="-4 -11 104 113">${s}</svg>`;
+}
+
+function contarPorZona(js) {
+  const c = {};
+  for (const j of js) c[j.zona] = (c[j.zona] || 0) + 1;
+  return Object.entries(c).sort((a, b) => b[1] - a[1]);
+}
+
+// Frases de lectura generadas con plantillas fijas
+function frasesEquipo(d, js, todas) {
+  ui.listasVer = [];
+  const ver = (lista, titulo) => { ui.listasVer.push({ lista, titulo }); return `<button data-ver="${ui.listasVer.length - 1}">ver jugadas</button>`; };
+  const chica = (n) => (n >= 5 && n <= 9 ? ' · muestra chica' : '');
+  const rot = stats.filtros.rot.length === 1 ? `En P${stats.filtros.rot[0]} arma` : 'Arma';
+  const frases = [];
+  const n = js.length;
+  if (n >= 5) {
+    const [[za, ca], segunda] = contarPorZona(js);
+    const texto = segunda
+      ? `${rot} <b>${txtPct(pct(ca, n))} a ${za}</b> y <b>${txtPct(pct(segunda[1], n))} a ${segunda[0]}</b>.`
+      : `${rot} <b>${txtPct(100)} a ${za}</b>.`;
+    const lista = js.filter((j) => j.zona === za || (segunda && j.zona === segunda[0]));
+    frases.push({ texto, conteo: `${segunda ? `${ca} y ${segunda[1]}` : ca} de ${n} armadas${chica(n)} · ${ver(lista, `Armadas a ${za}${segunda ? ' y ' + segunda[0] : ''}`)}` });
+  }
+  const mala = js.filter((j) => j.pase === '!' || j.pase === '-');
+  if (mala.length >= 5) {
+    const [[z, c]] = contarPorZona(mala);
+    frases.push({ texto: `Con pase malo se va a <b>${z}: ${txtPct(pct(c, mala.length))}</b>.`,
+      conteo: `${c} de ${mala.length} con pase ! o -${chica(mala.length)} · ${ver(mala.filter((j) => j.zona === z), `Pase malo a ${z}`)}` });
+  }
+  const ataques = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque && j.dir);
+  if (ataques.length >= 5) {
+    const dirs = ['diago', 'calle', 'diago corta'].map((x) => ({ x, c: ataques.filter((j) => j.dir === x).length })).sort((a, b) => b.c - a.c);
+    const corta = dirs.find((x) => x.x === 'diago corta');
+    const texto = dirs[1].c
+      ? `Ataca más <b>${dirs[0].x} (${txtPct(pct(dirs[0].c, ataques.length))})</b> que ${dirs[1].x} (${txtPct(pct(dirs[1].c, ataques.length))}).`
+      : `Ataca <b>${dirs[0].x} (${txtPct(100)})</b>.`;
+    frases.push({ texto, conteo: `${ataques.length} ataques · d. corta ${txtPct(pct(corta.c, ataques.length))}${chica(ataques.length)} · <button data-tab="ataque">ver Ataque</button>` });
+  }
+  const segundas = todas.filter((j) => j.armada === 'segunda');
+  if (segundas.length) {
+    const buenas = todas.filter((j) => j.pase === '#' || j.pase === '+');
+    const segB = buenas.filter((j) => j.armada === 'segunda').length;
+    frases.push({ texto: `Segunda del armador: <b>${txtPct(pct(segB, buenas.length))}</b> con pase bueno.`,
+      conteo: `${segB} de ${buenas.length} con pase # o + · ${ver(segundas, 'Segundas del armador')}` });
+  }
+  if (!frases.length) return '<p class="stats-nota">Con los filtros actuales hay muy pocas jugadas para sacar una lectura (se necesitan 5 o más).</p>';
+  return frases.map((f) => `<div class="frase"><p>${f.texto}</p><div class="conteo">${f.conteo}</div></div>`).join('');
+}
+
+function vistaEquipo(d) {
+  const p = partido();
+  const todas = filtrar(d.jugadas, 'jugadas');
+  const js = todas.filter((j) => !ARMADAS[j.armada].especial);
+  const rotSel = stats.filtros.rot.length === 1 ? stats.filtros.rot[0] : null;
+  const sinRot = filtrarSin(d.jugadas, 'jugadas', 'rot').filter((j) => !ARMADAS[j.armada].especial);
+  const fichas = [1, 2, 3, 4, 5, 6].map((r) => {
+    const lista = sinRot.filter((j) => j.rot === r);
+    const z = contarPorZona(lista);
+    const pie = lista.length
+      ? `<b>${z[0][0]} ${txtPct(pct(z[0][1], lista.length))}</b>${z[1] ? ` · ${z[1][0]} ${txtPct(pct(z[1][1], lista.length))}` : ''} · n=${lista.length}`
+      : 'sin armadas';
+    return `<div class="ficha${rotSel === r ? ' sel' : ''}" data-ficha="${r}" title="Clic: filtrar P${r}"><span class="nombre">P${r}</span>` +
+      (lista.length ? mediaCancha(lista, { ancho: 138, alto: 150, k: 0.09, etiquetas: 'mayor', armador: false }) : '<svg viewBox="-4 -11 104 113"></svg>') +
+      `<span class="pie">${pie}</span></div>`;
+  }).join('');
+  const tabla = vistaArmadorTablas(d);
+  return `<div class="bloque-titulo">Tendencia${rotSel ? ' · P' + rotSel : ' general'}</div>` +
+    `<div class="tendencia"><div>${js.length ? mediaCancha(js, { ancho: 258, alto: 280, k: 0.075, etiquetas: 'todas' }) : '<p class="stats-nota">Sin armadas con estos filtros.</p>'}` +
+    `<div class="nota-color">color = armada predominante</div></div>` +
+    `<div class="frases">${frasesEquipo(d, js, todas)}</div></div>` +
+    `<div class="bloque-titulo">Ficha por rotación<span>${rotSel ? `P${rotSel} filtrada` : 'clic en una cancha = filtra esa rotación'}</span></div>` +
+    `<div class="fichas${rotSel ? ' filtrada' : ''}">${fichas}</div>` +
+    plegable('tablaEquipo', 'Ver tabla · rotación × zona', tabla);
+}
+
+function plegable(clave, titulo, contenido, resumen = '') {
+  const abierto = !!(prefs.plegables && prefs.plegables[clave]);
+  return `<div class="plegable" data-pleg="${clave}"><span class="flecha">${abierto ? '▾' : '▸'}</span><span class="titulo">${titulo}</span>` +
+    (resumen ? `<span class="resumen-pleg">${resumen}</span>` : '') + `</div>` + (abierto ? `<div>${contenido}</div>` : '');
+}
+
+function vistaArmadorTablas(d) {
+  const a = partesArmador(d, partido());
+  return `<p class="stats-nota">${a.n} armadas del armador (sin emergencia ni segunda). Porcentaje de cada fila según zona de ataque. Clic en una celda filtra las jugadas.</p>` +
+    `<div class="dos-col"><div><h3>Por rotación</h3>${a.porRot}</div>` +
+    `<div><h3>Por calidad de pase (recepción y defensa)</h3>${a.porPase}${a.emergencias}` +
+    `<h3>Segunda del armador por rotación</h3>${a.segunda}</div></div>`;
+}
+
+// ---------- Pestaña Ataque ----------
+
+const ORIGEN_Y = { Z4: 12, Z5: 12, Z3: 45, Z6: 45, Z2: 78, Z1: 78 };
+const GRISES_DIR = ['#C9CDD2', '#7E8792', '#4A515A'];
+const NOMBRE_DIR = { calle: 'Calle', diago: 'Diago', 'diago corta': 'D. corta' };
+
+// Impacto (coordenadas normalizadas) llevado a la cancha rival de la tarjeta (red en x = 0)
+function aRival(punto) {
+  const [x, y] = aMetros(punto);
+  return [(x - CANCHA.red) * VB, (y - CANCHA.y0) * VB];
+}
+
+function tarjetaZona(z, lista) {
+  const id = `ta${++idSvg}`;
+  const zaguero = ['Z5', 'Z6', 'Z1'].includes(z);
+  const origen = [zaguero ? -14 : -6, ORIGEN_Y[z]];
+  const r = resumenAtaques(lista);
+  let s = marcadores(id);
+  s += `<rect x="0" y="0" width="90" height="90" fill="var(--superficie-cancha)" stroke="var(--linea-cancha)" stroke-width="0.5"/>`;
+  s += `<line x1="30" y1="0" x2="30" y2="90" stroke="var(--linea-cancha)" stroke-width="0.35" opacity="0.7"/>`;
+  s += `<line x1="0" y1="-7" x2="0" y2="97" stroke="var(--texto-2)" stroke-width="1.2"/>`;
+  const agregado = lista.length >= 15;
+  if (agregado) {
+    const rem = lista.filter((j) => j.golpe === 'remate' && j.dir);
+    const dirs = ['calle', 'diago', 'diago corta'].map((x) => ({ x, l: rem.filter((j) => j.dir === x) })).filter((x) => x.l.length);
+    const max = Math.max(0, ...dirs.map((x) => x.l.length));
+    const tipo = armadaPredominante(lista);
+    const arriba = origen[1] < 45, abajo = origen[1] > 45;
+    // Para Z3/Z6 la diagonal va hacia el lado donde caen más diagonales
+    const ladoDiago = (() => {
+      const dg = rem.filter((j) => j.dir !== 'calle');
+      if (!dg.length) return 1;
+      return dg.reduce((a, j) => a + aRival(j.ataque.punto)[1], 0) / dg.length < 45 ? -1 : 1;
+    })();
+    const destino = (dir) => {
+      if (arriba) return { calle: [80, 8], diago: [80, 82], 'diago corta': [26, 84] }[dir];
+      if (abajo) return { calle: [80, 82], diago: [80, 8], 'diago corta': [26, 6] }[dir];
+      return { calle: [80, 45], diago: [80, ladoDiago < 0 ? 8 : 82], 'diago corta': [26, ladoDiago < 0 ? 6 : 84] }[dir];
+    };
+    dirs.sort((a, b) => a.l.length - b.l.length).forEach(({ x, l }) => {
+      const p100 = (100 * l.length) / rem.length;
+      const mayor = l.length === max;
+      const fin = destino(x);
+      s += `<path d="${curva(origen, fin, 5, 1)}" fill="none" stroke="var(${ARMADAS[tipo].variable})" stroke-width="${(0.5 + p100 * 0.085).toFixed(2)}" ` +
+        `stroke-linecap="round" opacity="${mayor ? 1 : 0.42}" marker-end="url(#${id}-${tipo})"/>`;
+      s += `<text x="${Math.min(fin[0], 84)}" y="${fin[1] < 45 ? fin[1] + 9 : fin[1] - 5}" font-size="5.6" text-anchor="end" ` +
+        `fill="var(${mayor ? '--texto' : '--texto-3'})" font-weight="${mayor ? 600 : 400}">${NOMBRE_DIR[x]} ${txtPct(Math.round(p100))}</text>`;
+    });
+  } else {
+    for (const j of lista) {
+      const [x, y] = aRival(j.ataque.punto);
+      const color = `var(${ARMADAS[j.armada].variable})`;
+      s += `<line x1="${origen[0]}" y1="${origen[1]}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="0.9"/>`;
+      s += esPuntoDeAtaque(j.resultado)
+        ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="${color}"/>`
+        : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.8" fill="var(--superficie-cancha)" stroke="${color}" stroke-width="0.9"/>`;
+    }
+  }
+  s += `<circle cx="${origen[0]}" cy="${origen[1]}" r="2.6" fill="var(--fondo)" stroke="var(--texto)" stroke-width="1.1"/>`;
+  return `<div class="tarjeta" data-fijar='${JSON.stringify({ zona: z })}' title="Clic: filtrar ${z}">` +
+    `<div class="cab"><b>${z}</b>n=${lista.length}<span class="efic">efic. ${txtEficacia(r.ef)}</span></div>` +
+    `<svg viewBox="-18 -9 116 106">${s}</svg>` +
+    `<div class="pie">${agregado ? 'agregado' : 'n<15 · relleno = punto'}</div></div>`;
+}
+
+// Tabla de ataque: n · calle · diago · d. corta · punto · error · bloq. · efic. (en %, sin el signo)
+function tablaAtaque(filas, titulo) {
+  const fila = ({ etiqueta, lista, filtro }) => {
+    const rem = lista.filter((j) => j.golpe === 'remate' && j.dir);
+    const dir = ['calle', 'diago', 'diago corta'].map((x) => rem.filter((j) => j.dir === x).length);
+    const maxDir = Math.max(...dir);
+    const conRes = lista.filter((j) => j.resultado);
+    const n = (f) => conRes.filter(f).length;
+    const r = resumenAtaques(lista);
+    const num = (v, b) => (b ? Math.round((100 * v) / b) : '·');
+    return `<tr${etiqueta === 'Total' ? ' class="total"' : ''}><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
+      `<td>${lista.length}</td>` +
+      dir.map((v) => `<td class="${v && v === maxDir ? 'max' : ''}">${num(v, rem.length)}</td>`).join('') +
+      `<td>${num(r.pts, conRes.length)}</td><td>${num(n((j) => j.resultado === 'error'), conRes.length)}</td>` +
+      `<td>${num(n((j) => j.resultado === 'bloqueado'), conRes.length)}</td>` +
+      `<td class="clave">${r.ef == null ? '—' : (r.ef > 0 ? '+' : '') + r.ef}</td></tr>`;
+  };
+  return `<table class="tabla"><tr><th>${titulo}</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Punto</th><th>Error</th><th>Bloq.</th><th>Efic.</th></tr>` +
+    filas.map(fila).join('') + `</table>`;
+}
+
+function vistaAtaqueV2(d) {
+  const js = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque);
+  if (!js.length) return '<p class="stats-nota">No hay ataques con estos filtros.</p>';
+  const rem = js.filter((j) => j.golpe === 'remate' && j.dir);
+  const dirs = ['diago', 'calle', 'diago corta'].map((x) => ({ x, c: rem.filter((j) => j.dir === x).length })).sort((a, b) => b.c - a.c);
+  const barra = dirs.map((x, i) => (x.c ? `<span style="flex:${x.c};background:${GRISES_DIR[i]}"></span>` : '')).join('');
+  const textos = dirs.map((x, i) => `${i === 0 ? '<b>' : ''}${NOMBRE_DIR[x.x]} ${txtPct(pct(x.c, rem.length))}${i === 0 ? '</b>' : ''}`).join('<span></span>');
+  const r = resumenAtaques(js);
+  const zonas = ['Z4', 'Z3', 'Z2', 'Z1', 'Z6', 'Z5'].map((z) => ({ z, l: js.filter((j) => j.zona === z) })).filter((x) => x.l.length);
+  const porZona = zonas.map(({ z, l }) => ({ etiqueta: z, lista: l, filtro: { zona: z } }));
+  porZona.push({ etiqueta: 'Total', lista: js, filtro: {} });
+  const jugs = [...new Set(js.map((j) => j.jugador).filter((x) => x != null))]
+    .map((n) => ({ etiqueta: `#${n}`, lista: js.filter((j) => j.jugador === n), filtro: { jugador: n } }))
+    .sort((a, b) => b.lista.length - a.lista.length);
+  const porJug = jugs.length
+    ? tablaAtaque([...jugs, { etiqueta: 'Total', lista: js.filter((j) => j.jugador != null), filtro: {} }], 'Jugador')
+    : '<p class="stats-nota">Asigna jugadores a los ataques (menú «Jugador» en la cancha) para ver esta tabla.</p>';
+  const impactos = partesAtaque(d, partido(), stats.mapa);
+  return `<div class="ataque-resumen"><div class="barra-dir">${barra}</div><div class="dir-textos">${textos}</div>` +
+    `<div class="efic-total">Eficacia <b>${txtEficacia(r.ef)}</b></div></div>` +
+    `<div class="bloque-titulo">Dirección por zona de origen<span>grosor = % · con menos de 15 jugadas se ven las trayectorias una a una</span></div>` +
+    `<div class="tarjetas-ataque">${zonas.map(({ z, l }) => tarjetaZona(z, l)).join('')}</div>` +
+    `<div class="dos-col"><div><div class="bloque-titulo">Eficacia por zona</div>${tablaAtaque(porZona, 'Zona')}</div>` +
+    `<div><div class="bloque-titulo">Por jugador</div>${porJug}</div></div>` +
+    plegable('impactos', 'Ver impactos en la cancha',
+      `<div class="fila-titulo"><span class="stats-nota">${impactos.n} ataques</span><div class="selector" id="selector-mapa">` +
+      `<button data-mapa="trayectorias" class="${stats.mapa === 'trayectorias' ? 'activo' : ''}">Trayectorias</button>` +
+      `<button data-mapa="calor" class="${stats.mapa === 'calor' ? 'activo' : ''}">Calor</button></div></div>` +
+      `<div style="max-width:620px">${impactos.cancha}</div>`);
+}
+
+function vistaSideoutRecepcion(d) {
+  return vistaSideout(d) + `<div class="bloque-titulo">Recepción</div>` + vistaRecepcion(d);
+}
+
+// ---------- Lista de jugadas y video lateral ----------
+
+const DURACION_CLIP = 8; // segundos que se reproduce cada clip con «Seguir solo»
+
+function listaClips(d) {
+  if (ui.clipsOverride) return ui.clipsOverride;
+  const tipo = DATOS_VISTA[stats.vista];
+  let base = tipo === 'todos' ? d.todos.filter((r) => r.evento) : d[tipo];
+  if (stats.vista === 'ataque') base = base.filter((j) => j.ataque);
+  const lista = filtrar(base, tipo).slice().sort((a, b) =>
+    a.pid === b.pid ? a.set - b.set || a.rally - b.rally || a.t - b.t : a.pid.localeCompare(b.pid));
+  return { lista, titulo: null, tipo };
+}
+
+function filaClip(c, tipo, i) {
+  let det = '', res = '';
+  if (tipo === 'jugadas') {
+    det = `${muestra(c.armada)}<span>${ARMADAS[c.armada].corto} · ${c.zona}</span>` + (c.pase ? califBadge(c.pase) : '');
+    res = c.resultado ? RESULTADOS[c.resultado].nombre : c.ataque ? '…' : 'sin ataque';
+  } else if (tipo === 'recepciones') {
+    det = `${califBadge(c.pase)}<span>${CALIF[c.pase].nombre}</span>`;
+    res = `gana ${nombre(c.gana, almacen.partidos[c.pid])}`;
+  } else if (tipo === 'todos') {
+    const x = almacen.partidos[c.pid];
+    const textos = { aceScout: 'Ace', errorScout: 'Error de saque', aceOtro: 'Ace rival', errorOtro: 'Error de saque rival', bloqueo: 'Bloqueo' };
+    det = `<span>${textos[c.evento]}</span>`;
+    res = nombre(c.ganaScout ? x.scouteado : otro(x.scouteado), x);
+  } else {
+    det = (c.pase ? califBadge(c.pase) : '<span class="tenue">sin recepción</span>') + (c.primerPunto ? '<span class="calc">1er ataque</span>' : '');
+    res = c.sideOut ? 'Side-out' : 'Punto rival';
+  }
+  const varios = partidosIncluidos().length > 1;
+  const ref = `${varios ? fmtFecha(almacen.partidos[c.pid].fecha).replace(/ \d{4}$/, '') + ' ' : ''}S${c.set} R${c.rally}`;
+  return `<div class="fila-clip${ui.clipIdx === i ? ' actual' : ''}" data-clip="${i}">` +
+    `<span class="ref">${esc(ref)}</span><span class="t">${fmtMinuto(c.t)}</span>` +
+    `<span class="detalle">${det}</span><span class="res">${esc(res)}</span><span class="tenue">▶</span></div>`;
+}
+
+function renderLateral(d) {
+  const { lista, titulo, tipo } = listaClips(d);
+  ui.clipsActuales = { lista, tipo };
+  const x = partido();
+  $('lateral-cab').innerHTML = `<span class="titulo">${esc(tituloPartido(x))}</span>` +
+    `<button class="btn-tenue chico" id="btn-esconder-video">✕ Esconder</button>`;
+  renderLateralCtl();
+  const filtros = textoFiltrosActivos(d);
+  $('clips-titulo').textContent = titulo || `${lista.length} jugadas${filtros.length ? ' · ' + filtros.join(' · ') : ''}`;
+  $('clips-cuenta').textContent = titulo ? `${lista.length}` : '';
+  $('clips-lista').innerHTML = lista.length ? lista.map((c, i) => filaClip(c, tipo, i)).join('') : '<div class="vacio">No hay jugadas con estos filtros.</div>';
+  renderAvisoStats();
+}
+
+function renderLateralCtl() {
+  if (ui.modo !== 'stats' || !ui.lateral) return;
+  const n = ui.clipsActuales ? ui.clipsActuales.lista.length : 0;
+  $('lateral-ctl').innerHTML =
+    `<button class="ctl" data-clipnav="-1" title="Clip anterior">${ICONOS.anterior}</button>` +
+    `<button class="ctl" data-clipnav="0" title="Reproducir / pausar">${Video.pausado() ? ICONOS.play : ICONOS.pausa}</button>` +
+    `<button class="ctl" data-clipnav="1" title="Clip siguiente">${ICONOS.siguiente}</button>` +
+    `<span class="clip-n">${ui.clipIdx != null && n ? `clip ${ui.clipIdx + 1} de ${n}` : `${n} jugadas`}</span>` +
+    `<label class="casilla"><input type="checkbox" id="seguir-solo" ${prefs.seguirSolo ? 'checked' : ''}> Seguir solo</label>`;
+}
+
+function abrirLateral(abrir = true) {
+  ui.lateral = abrir;
+  document.body.classList.toggle('lateral', abrir && ui.modo === 'stats');
+  if (!abrir) { Video.pausar(); ui.clipIdx = null; ui.clipActivo = null; ui.clipsOverride = null; }
+  renderStats();
+}
+
+async function reproducirIndice(i) {
+  const c = ui.clipsActuales && ui.clipsActuales.lista[i];
+  if (!c) return;
+  ui.clipIdx = i;
+  ui.clipActivo = { t: c.t };
+  if (!ui.lateral) abrirLateral(true);
+  $('clips-lista').querySelectorAll('.fila-clip').forEach((f) => f.classList.toggle('actual', Number(f.dataset.clip) === i));
+  await reproducirClip(c.pid, c.t);
+  renderLateral(recolectar(partidosIncluidos()));
+}
+
+// «Seguir solo»: pasado el clip, salta al siguiente
+function seguirClips(t) {
+  if (ui.modo !== 'stats' || !ui.lateral || !prefs.seguirSolo || !ui.clipActivo || Video.pausado()) return;
+  if (t < ui.clipActivo.t + DURACION_CLIP) return;
+  const n = ui.clipsActuales ? ui.clipsActuales.lista.length : 0;
+  if (ui.clipIdx != null && ui.clipIdx + 1 < n) reproducirIndice(ui.clipIdx + 1);
+  else { Video.pausar(); ui.clipActivo = null; }
 }
 
 function renderAvisoStats() {
   const el = $('clips-aviso');
   if (!el) return;
-  const aviso = ui.aviso && ui.aviso.hasta > Date.now() ? ui.aviso.texto : '';
-  el.textContent = aviso;
+  el.textContent = ui.aviso && ui.aviso.hasta > Date.now() ? ui.aviso.texto : '';
 }
 
-function renderClips(d) {
-  const tipo = DATOS_VISTA[stats.vista];
-  const base = tipo === 'todos' ? d.todos.filter((r) => r.evento) : d[tipo];
-  const lista = filtrar(base, tipo).slice().sort((a, b) =>
-    a.pid === b.pid ? a.set - b.set || a.rally - b.rally || a.t - b.t : a.pid.localeCompare(b.pid));
-  const varios = partidosIncluidos().length > 1;
-  const corto = (pid) => {
-    const x = almacen.partidos[pid];
-    return x ? `${fmtFecha(x.fecha).replace(/ \d{4}$/, '')}` : '';
-  };
-  const filas = lista.map((c) => {
-    let det;
-    if (tipo === 'jugadas') {
-      const calc = c.ataque ? textoAtaque(c.armadaObj, c.ataque) : '';
-      det = (c.pase ? califBadge(c.pase) : `<span class="tenue">${FASES[c.fase].toLowerCase()}</span>`) +
-        muestra(c.armada) + `<span>${ARMADAS[c.armada].corto}${c.zona ? ' ' + c.zona : ''}</span>` +
-        (calc ? `<span class="calc">· ${esc(calc)}</span>` : '') +
-        (c.resultado ? simboloMini(c.resultado) + `<span>${RESULTADOS[c.resultado].nombre}</span>` : c.ataque ? '' : '<span class="calc">sin ataque</span>') +
-        (c.jugador != null ? `<span class="jug">${c.jugador}</span>` : '');
-    } else if (tipo === 'recepciones') {
-      det = califBadge(c.pase) + `<span style="font-family:var(--sans)">${CALIF[c.pase].nombre}</span>` +
-        (c.jugador != null ? `<span class="jug">${c.jugador}</span>` : '') +
-        `<span class="calc">· gana ${esc(nombre(c.gana, almacen.partidos[c.pid]))}</span>`;
-    } else if (tipo === 'todos') {
-      const x = almacen.partidos[c.pid];
-      const quien = (eq) => esc(nombre(eq, x));
-      const textos = {
-        aceScout: `Ace de ${quien(x.scouteado)}`, errorScout: `Error de saque de ${quien(x.scouteado)}`,
-        aceOtro: `Ace de ${quien(otro(x.scouteado))}`, errorOtro: `Error de saque de ${quien(otro(x.scouteado))}`,
-        bloqueo: `Bloqueo de ${quien(x.scouteado)}`,
-      };
-      det = `<span>${textos[c.evento]}</span>`;
-    } else {
-      det = (c.pase ? califBadge(c.pase) : '<span class="tenue">sin recepción</span>') +
-        `<span>${c.sideOut ? 'Side-out' : 'Punto rival'}</span>` + (c.primerPunto ? '<span class="calc">· 1er ataque</span>' : '');
-    }
-    return `<div class="fila fila-clip" data-pid="${c.pid}" data-t="${c.t}">` +
-      `<span class="tenue">${varios ? esc(corto(c.pid)) + ' · ' : ''}S${c.set}·R${c.rally}</span>` +
-      `<span class="t">${fmtTiempo(c.t)}</span><span class="tenue">${c.rot ? 'P' + c.rot : '—'}</span>` +
-      `<span class="detalle">${det}</span><button class="ir" title="Reproducir">▶</button></div>`;
-  }).join('');
-  const nombres = { jugadas: 'jugadas', recepciones: 'recepciones', rallies: 'rallies', todos: 'rallies' };
-  $('clips-titulo').textContent = `Clips · ${VISTAS[stats.vista]}`;
-  $('clips-cuenta').textContent = `${lista.length} ${nombres[tipo]}`;
-  $('clips-lista').innerHTML = filas || '<div class="vacio">No hay jugadas con estos filtros.</div>';
-  renderAvisoStats();
+// ---------- Render de estadísticas ----------
+
+function unidadesVista(d) {
+  const p = partido();
+  // Equipo: armadas del armador (sin emergencia ni segunda), igual que las frases y la distribución
+  const normales = (l) => l.filter((j) => !ARMADAS[j.armada].especial);
+  if (stats.vista === 'equipo') return [normales(filtrar(d.jugadas, 'jugadas')).length, normales(d.jugadas).length, 'armadas'];
+  if (stats.vista === 'ataque') return [filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque).length, d.jugadas.filter((j) => j.ataque).length, 'ataques'];
+  if (stats.vista === 'sideout') return [filtrar(d.rallies, 'rallies').length, d.rallies.length, `rallies recibiendo`];
+  return [filtrar(d.todos, 'todos').length, d.todos.length, 'rallies'];
 }
 
 function renderStats() {
   const p = partido();
   if (!p) return;
+  document.body.classList.toggle('lateral', !!ui.lateral);
   const d = recolectar(partidosIncluidos());
-  renderAlcance();
+  renderTira();
   renderFiltros(d);
   $('stats-tabs').innerHTML = Object.entries(VISTAS)
     .map(([k, v]) => `<button data-vistastats="${k}" class="${stats.vista === k ? 'activo' : ''}">${v}</button>`).join('');
-  const vistas = { armador: vistaArmador, ataque: vistaAtaque, sideout: vistaSideout, recepcion: vistaRecepcion, saque: vistaSaque };
-  $('stats-contenido').innerHTML = vistas[stats.vista](d);
-  renderClips(d);
+  const [n, total, unidad] = unidadesVista(d);
+  $('stats-resumen').textContent = [nombre(p.scouteado), ...textoFiltrosActivos(d), `${n === total ? n : `${n} de ${total}`} ${unidad}`].join(' · ');
+  const vistas = { equipo: vistaEquipo, ataque: vistaAtaqueV2, sideout: vistaSideoutRecepcion, saque: vistaSaque };
+  const cont = $('stats-contenido');
+  const scroll = cont.scrollTop;
+  cont.innerHTML = vistas[stats.vista](d);
+  cont.scrollTop = scroll;
+  if (ui.lateral) renderLateral(d);
 }
 
 async function reproducirClip(pid, t) {
@@ -2410,7 +2811,13 @@ function dialogoElegirPartidos() {
 function cambiarModo(modo) {
   ui.modo = modo;
   document.body.classList.toggle('modo-stats', modo === 'stats');
+  document.body.classList.toggle('lateral', modo === 'stats' && !!ui.lateral);
   $('selector-modo').querySelectorAll('button').forEach((b) => b.classList.toggle('activo', b.dataset.modo === modo));
+  alternarAyuda(false);
+  cerrarMenus();
+  aplicarFoco();
+  if (modo === 'captura') { ui.clipActivo = null; ui.clipsOverride = null; }
+  else Video.pausar();
   render();
 }
 
@@ -2419,24 +2826,80 @@ function conectarStats() {
     const b = ev.target.closest('[data-modo]');
     if (b && partido()) cambiarModo(b.dataset.modo);
   });
+  $('resumen-pdf').addEventListener('click', imprimirResumen);
   $('stats').addEventListener('click', (ev) => {
     const t = ev.target;
+    const seg = t.closest('[data-seg]');
+    if (seg) {
+      const { k, v } = JSON.parse(seg.dataset.seg);
+      stats.filtros[k] = v.slice();
+      ui.clipsOverride = null;
+      renderStats();
+      return;
+    }
     const chip = t.closest('[data-dim]');
-    if (chip) { alternarFiltro(chip.dataset.dim, JSON.parse(chip.dataset.val)); return; }
+    if (chip) { ui.clipsOverride = null; alternarFiltro(chip.dataset.dim, JSON.parse(chip.dataset.val)); return; }
+    const ficha = t.closest('[data-ficha]');
+    if (ficha) {
+      const r = Number(ficha.dataset.ficha);
+      stats.filtros.rot = stats.filtros.rot.length === 1 && stats.filtros.rot[0] === r ? [] : [r];
+      ui.clipsOverride = null;
+      renderStats();
+      return;
+    }
+    const verLista = t.closest('[data-ver]');
+    if (verLista) {
+      const v = ui.listasVer[Number(verLista.dataset.ver)];
+      ui.clipsOverride = { lista: v.lista, titulo: v.titulo, tipo: 'jugadas' };
+      ui.clipIdx = null;
+      abrirLateral(true);
+      return;
+    }
+    const irTab = t.closest('[data-tab]');
+    if (irTab) { stats.vista = irTab.dataset.tab; ui.clipsOverride = null; renderStats(); return; }
     const fij = t.closest('[data-fijar]');
-    if (fij) { fijarFiltros(JSON.parse(fij.dataset.fijar)); return; }
+    if (fij) {
+      ui.clipsOverride = null;
+      ui.lateral = true;
+      fijarFiltros(JSON.parse(fij.dataset.fijar));
+      return;
+    }
     const tab = t.closest('[data-vistastats]');
-    if (tab) { stats.vista = tab.dataset.vistastats; renderStats(); return; }
+    if (tab) { stats.vista = tab.dataset.vistastats; ui.clipsOverride = null; ui.clipIdx = null; renderStats(); return; }
     const mapa = t.closest('[data-mapa]');
     if (mapa) { stats.mapa = mapa.dataset.mapa; renderStats(); return; }
-    if (t.closest('#plegar-filtros')) { stats.filtrosAbiertos = !stats.filtrosAbiertos; renderStats(); return; }
-    if (t.closest('#limpiar-filtros')) { for (const k of Object.keys(stats.filtros)) stats.filtros[k] = []; renderStats(); return; }
-    if (t.closest('#elegir-partidos')) { dialogoElegirPartidos(); return; }
-    if (t.closest('#resumen-pdf')) imprimirResumen();
+    const pleg = t.closest('[data-pleg]');
+    if (pleg) {
+      prefs.plegables = prefs.plegables || {};
+      prefs.plegables[pleg.dataset.pleg] = !prefs.plegables[pleg.dataset.pleg];
+      guardarPrefs();
+      renderStats();
+      return;
+    }
+    if (t.closest('#btn-mas-filtros')) { alternarMasFiltros(); return; }
+    if (t.closest('#limpiar-filtros')) { for (const k of Object.keys(stats.filtros)) stats.filtros[k] = []; ui.clipsOverride = null; renderStats(); return; }
+    if (t.closest('#btn-mostrar-video')) { abrirLateral(true); return; }
+    if (t.closest('#elegir-partidos')) dialogoElegirPartidos();
+  });
+  $('lateral-cab').addEventListener('click', (ev) => { if (ev.target.closest('#btn-esconder-video')) abrirLateral(false); });
+  $('lateral-ctl').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-clipnav]');
+    if (!b) return;
+    const paso = Number(b.dataset.clipnav);
+    if (paso === 0) { Video.alternar(); return; }
+    const n = ui.clipsActuales ? ui.clipsActuales.lista.length : 0;
+    if (!n) return;
+    const i = ui.clipIdx == null ? 0 : Math.min(n - 1, Math.max(0, ui.clipIdx + paso));
+    reproducirIndice(i);
+  });
+  $('lateral-ctl').addEventListener('change', (ev) => {
+    if (ev.target.id !== 'seguir-solo') return;
+    prefs.seguirSolo = ev.target.checked;
+    guardarPrefs();
   });
   $('clips-lista').addEventListener('click', (ev) => {
     const f = ev.target.closest('.fila-clip');
-    if (f) reproducirClip(f.dataset.pid, Number(f.dataset.t));
+    if (f) reproducirIndice(Number(f.dataset.clip));
   });
 }
 
@@ -2458,6 +2921,14 @@ document.addEventListener('keydown', (ev) => {
   if (esCampoTexto(ev.target)) return;
   const k = ev.key.toLowerCase();
 
+  // Ayuda y menús primero: Esc solo los cierra
+  if (ev.key === TECLAS.ayuda && ui.modo === 'captura') { ev.preventDefault(); alternarAyuda(); return; }
+  if (ev.key === 'Escape') {
+    if (!$('ayuda').hidden) { ev.preventDefault(); alternarAyuda(false); return; }
+    if (hayMenuAbierto()) { ev.preventDefault(); cerrarMenus(); return; }
+    if (ui.modo === 'stats' && !$('mas-filtros').hidden) { ev.preventDefault(); alternarMasFiltros(false); return; }
+  }
+
   if ((ev.ctrlKey || ev.metaKey) && k === 'z' && !ev.shiftKey) {
     ev.preventDefault();
     if (ui.modo === 'captura') deshacer();
@@ -2473,6 +2944,7 @@ document.addEventListener('keydown', (ev) => {
   if (k === TECLAS.silencio) { ev.preventDefault(); if (!ev.repeat) alternarSilencio(); return; }
   if (k === TECLAS.cuadroAtras) { ev.preventDefault(); Video.cuadro(-1); return; }
   if (k === TECLAS.cuadroAdelante) { ev.preventDefault(); Video.cuadro(1); return; }
+  if (k === TECLAS.foco && ui.modo === 'captura' && !ev.repeat) { ev.preventDefault(); alternarFoco(); return; }
 
   if (ev.repeat) return;
   if (teclaCaptura(k)) ev.preventDefault();
@@ -2894,11 +3366,73 @@ function cargarVideoArchivo(archivo) {
 // Arranque
 // =====================================================================
 
+// ---------- Menús desplegables (header ⋯, velocidad, marcador) ----------
+
+function hayMenuAbierto() { return [...document.querySelectorAll('.menu')].some((m) => !m.hidden); }
+
+function cerrarMenus(excepto = null) {
+  document.querySelectorAll('.menu').forEach((m) => { if (m !== excepto) m.hidden = true; });
+}
+
+function alternarMenu(id) {
+  const m = $(id);
+  cerrarMenus(m);
+  m.hidden = !m.hidden;
+}
+
+// ---------- Modo foco: solo video, «Ahora» y cancha ----------
+
+function aplicarFoco() {
+  document.body.classList.toggle('foco', !!prefs.foco && ui.modo === 'captura');
+}
+
+function alternarFoco(activar = !prefs.foco) {
+  prefs.foco = activar;
+  guardarPrefs();
+  aplicarFoco();
+}
+
 function conectarEventos() {
   conectarStats();
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
+  $('btn-menu').addEventListener('click', () => alternarMenu('menu-header'));
+  $('menu-header').addEventListener('click', (ev) => { if (ev.target.closest('button')) cerrarMenus(); });
   $('btn-partidos').addEventListener('click', dialogoPartidos);
+  $('btn-datos').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-plantel').addEventListener('click', dialogoPlantel);
+  $('btn-cambiar-video').addEventListener('click', () => {
+    if (ui.modo === 'stats') cambiarModo('captura');
+    ui.cambiandoVideo = true;
+    const p = partido();
+    if (p && p.video && p.video.tipo === 'youtube') $('input-youtube').value = p.video.url;
+    render();
+  });
+  $('btn-foco').addEventListener('click', () => alternarFoco(true));
+  $('btn-salir-foco').addEventListener('click', () => alternarFoco(false));
+  $('btn-velocidad').addEventListener('click', () => alternarMenu('menu-velocidad'));
+  $('btn-menu-marcador').addEventListener('click', () => alternarMenu('menu-marcador'));
+  $('menu-marcador').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-punto]');
+    if (!b) return;
+    cerrarMenus();
+    puntoDirecto(b.dataset.punto);
+  });
+  // Clic fuera de un menú lo cierra
+  document.addEventListener('mousedown', (ev) => {
+    if (!ev.target.closest('.menu-ancla')) cerrarMenus();
+  });
+  $('estado').addEventListener('click', (ev) => { if (ev.target.closest('#btn-atajos')) alternarAyuda(); });
+  $('anteriores-cab').addEventListener('click', (ev) => {
+    if (ev.target.closest('#btn-volver-rally')) { volverAlRally(); return; }
+    alternarListaAnteriores();
+  });
+  $('anteriores-lista').addEventListener('click', (ev) => {
+    const g = ev.target.closest('[data-set-plegado]');
+    if (!g) return;
+    ui.setsAbiertos = ui.setsAbiertos || {};
+    ui.setsAbiertos[g.dataset.setPlegado] = !ui.setsAbiertos[g.dataset.setPlegado];
+    renderAnteriores();
+  });
   $('btn-jugador').addEventListener('click', () => alternarMenuJugador());
   $('btn-leyenda').addEventListener('click', () => {
     prefs.leyenda = !prefs.leyenda;
@@ -2934,23 +3468,16 @@ function conectarEventos() {
     ev.target.value = '';
   });
   $('btn-cancelar-carga').addEventListener('click', () => { ui.cambiandoVideo = false; render(); });
-  $('chip-fuente').addEventListener('click', () => {
-    ui.cambiandoVideo = true;
-    const p = partido();
-    if (p && p.video && p.video.tipo === 'youtube') $('input-youtube').value = p.video.url;
-    render();
-  });
   $('video-capa').addEventListener('click', () => Video.alternar());
   $('btn-sonido').addEventListener('click', alternarSilencio);
 
   $('btn-atras').addEventListener('click', () => Video.mover(-SALTO_SEGUNDOS));
   $('btn-adelante').addEventListener('click', () => Video.mover(SALTO_SEGUNDOS));
   $('btn-play').addEventListener('click', () => Video.alternar());
-  $('btn-cuadro-atras').addEventListener('click', () => Video.cuadro(-1));
-  $('btn-cuadro-adelante').addEventListener('click', () => Video.cuadro(1));
-  $('grupo-velocidad').addEventListener('click', (ev) => {
+  $('menu-velocidad').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-vel]');
     if (!b) return;
+    cerrarMenus();
     Video.velocidad(Number(b.dataset.vel));
     prefs.velocidad = Video.vel;
     guardarPrefs();
@@ -2973,10 +3500,6 @@ function conectarEventos() {
     if (b) Video.saltar(Number(b.dataset.t));
   });
 
-  $('punto-rapido').addEventListener('click', (ev) => {
-    const b = ev.target.closest('[data-punto]');
-    if (b) puntoDirecto(b.dataset.punto);
-  });
   $('chips-rotacion').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-rot]');
     if (b) corregirRotacion(Number(b.dataset.rot));
@@ -3011,6 +3534,8 @@ function iniciar() {
   conectarEventos();
   renderLeyenda();
   aplicarLeyenda();
+  aplicarFoco();
+  document.body.classList.toggle('lista-abierta', !!prefs.listaAbierta);
   render();
   setInterval(actualizarVideoUI, 100);
   setInterval(renderGuardado, 1000);
