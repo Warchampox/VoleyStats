@@ -159,5 +159,20 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   reproducido (estado «sin iniciar»), YouTube solo acepta el primer salto. Después de
   reproducir una vez, todos los saltos funcionan.
 
+### Resultado «Usa el bloque» (block-out, 2026-10-14)
+
+- `RESULTADOS.usaBloque` { nombre: 'Usa el bloque', gana: 'scout' }, tecla 7. Cierra el
+  rally con punto del equipo que ataca.
+- Dibujo (cancha y `simboloMini`): línea hasta la red, rombo de toque en la red, punteada
+  hasta el impacto y disco de punto. Si la trayectoria no cruza la red: línea completa con
+  disco de punto.
+- Estadísticas: `esPuntoDeAtaque()` lo cuenta como punto en «Punto», en la eficacia de la
+  vista Ataque y en «1er ataque» de Side-out. Aparece en el filtro Resultado y en la leyenda.
+- Panel de estado, paso Resultado: 7 teclas en 3 columnas. En 4 columnas se cortaban 5 de
+  las 7 etiquetas; en 3 el panel sube de 222 a 238 px y la cancha conserva 510×301 a 1440×812.
+- Sin migración (valor nuevo de un campo existente). Probado: importar un JSON viejo
+  (sin plantel ni este resultado) funciona.
+- Fila agregada en la tabla «Resultados del ataque» de SPEC.md. `?v=16`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

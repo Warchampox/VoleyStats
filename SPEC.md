@@ -84,6 +84,7 @@ Cada tipo tiene un color en la cancha. Son cuatro:
 | Tocado por el bloque y sigue (pinchado) | Símbolo de toque en la red |
 | Rejugado / cubierto | Símbolo de vuelta al propio campo |
 | Defendido | Línea normal, el rally sigue |
+| Usa el bloque (pega en el bloque y sale) | Línea hasta la red, rombo de toque en la red, punteada hasta el impacto y marca de punto |
 
 ### Marcador y rotación
 

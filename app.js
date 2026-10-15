@@ -26,7 +26,7 @@ const TECLAS = {
   calificacion: { '1': '#', '2': '+', '3': '!', '4': '-', '5': '=' },
   armada: { q: 'primer', w: 'alta', e: 'rapida', r: 'pipe' },
   golpe: { c: 'corto', v: 'largo' },
-  resultado: { '1': 'punto', '2': 'error', '3': 'bloqueado', '4': 'pinchado', '5': 'rejugado', '6': 'defendido' },
+  resultado: { '1': 'punto', '2': 'error', '3': 'bloqueado', '4': 'pinchado', '5': 'rejugado', '6': 'defendido', '7': 'usaBloque' },
   ganador: { '1': 'propio', '2': 'rival' },
 };
 
@@ -68,7 +68,13 @@ const RESULTADOS = {
   pinchado: { nombre: 'Pinchado', gana: null },
   rejugado: { nombre: 'Rejugado', gana: null },
   defendido: { nombre: 'Defendido', gana: null },
+  usaBloque: { nombre: 'Usa el bloque', gana: 'scout' }, // block-out: pega en el bloque y sale
 };
+
+// Ataques que terminan en punto del equipo que ataca (punto directo o usa el bloque)
+function esPuntoDeAtaque(res) {
+  return !!res && RESULTADOS[res].gana === 'scout';
+}
 
 // Área normalizada 0–1 = 22 × 13 m (cancha 18 × 9 más 2 m de zona libre).
 // x = 0 es el fondo detrás del equipo scouteado; la red queda en x = 0,5.
@@ -1177,7 +1183,7 @@ function contenidoEstado(e) {
         tipo: 'tecla', titulo: 'Resultado del ataque',
         contexto: `${GOLPES[atq.golpe].nombre}${calc ? ' · ' + calc : ''}${z ? ' desde ' + z : ''}.`,
         teclas: Object.entries(TECLAS.resultado).map(([k, res]) => teclaItem(k, RESULTADOS[res].nombre, simboloMini(res))),
-        cols: 'c3',
+        cols: 'c3', // 7 teclas: en c4 se cortan las etiquetas; c3 suma una fila sin achicar la cancha
       };
     }
   }
@@ -1281,6 +1287,7 @@ function simboloMini(res) {
     case 'error': s = linea(12) + `<circle cx="16" cy="5" r="3.2" fill="none" stroke="${t}" stroke-width="1.2"/><line x1="13.8" y1="7.4" x2="18.2" y2="2.6" stroke="${t}" stroke-width="1.2"/>`; break;
     case 'bloqueado': s = linea(11) + `<path d="M12 2l6 6M18 2l-6 6" stroke="${t}" stroke-width="1.3"/>`; break;
     case 'pinchado': s = linea(10) + `<path d="M13 1.5L16.5 5 13 8.5 9.5 5Z" fill="none" stroke="${t}" stroke-width="1.2"/><line x1="17" y1="5" x2="22" y2="5" stroke="${t}" stroke-width="1.2" stroke-dasharray="1.6 1.4"/>`; break;
+    case 'usaBloque': s = linea(6) + `<path d="M9 2L12 5 9 8 6 5Z" fill="none" stroke="${t}" stroke-width="1.2"/><line x1="12.5" y1="5" x2="17" y2="5" stroke="${t}" stroke-width="1.2" stroke-dasharray="1.6 1.4"/><circle cx="19.5" cy="5" r="2.5" fill="${t}"/>`; break;
     case 'rejugado': s = `<path d="M0 3h15q4 0 4 3.5t-4 3.5h-6" fill="none" stroke="${t}" stroke-width="1.3"/><path d="M11.5 7.5L9 10l2.5 2" fill="none" stroke="${t}" stroke-width="1.2"/>`; break;
     case 'defendido': s = linea(18) + `<path d="M14 1.5L18.5 5 14 8.5" fill="none" stroke="${t}" stroke-width="1.3"/>`; break;
     default: s = linea(18);
@@ -1332,7 +1339,7 @@ function dibujarJugada({ armada, ataque }, opacidad = 1, etiquetas = true) {
     if (res === 'bloqueado' && nx !== null) {
       s += linea(ax, ay, nx - 1.5, ny);
       s += `<path d="M${nx - 2.6} ${ny - 2.6}l5.2 5.2M${nx + 2.6} ${ny - 2.6}l-5.2 5.2" stroke="${T}" stroke-width="1.2"/>`;
-    } else if (res === 'pinchado' && nx !== null) {
+    } else if ((res === 'pinchado' || res === 'usaBloque') && nx !== null) {
       s += linea(ax, ay, nx, ny);
       s += linea(nx, ny, ix, iy, 'stroke-dasharray="2.4 2"');
       s += `<path d="M${nx} ${ny - 3.2}L${nx + 3.2} ${ny} ${nx} ${ny + 3.2} ${nx - 3.2} ${ny}Z" fill="var(--superficie-cancha)" stroke="${T}" stroke-width="1"/>`;
@@ -1343,7 +1350,7 @@ function dibujarJugada({ armada, ataque }, opacidad = 1, etiquetas = true) {
     } else {
       s += linea(ax, ay, ix, iy);
     }
-    if (res === 'punto') {
+    if (res === 'punto' || res === 'usaBloque') {
       s += `<circle cx="${ix}" cy="${iy}" r="2.6" fill="${T}"/>`;
     } else if (res === 'error') {
       s += `<circle cx="${ix}" cy="${iy}" r="2.6" fill="var(--superficie-cancha)" stroke="${T}" stroke-width="1"/>`;
@@ -1665,7 +1672,7 @@ function recolectar(partidos) {
           rallies.push({
             ...base, t: r.t, gana: r.gana, sideOut: r.gana === scout,
             pase: rec ? rec.calif : null,
-            primerPunto: !!(rec && primerAtaque && primerAtaque.resultado === 'punto' && faseArmada(r, r.acciones[r.acciones.indexOf(primerAtaque) - 1]) === 'recepcion'),
+            primerPunto: !!(rec && primerAtaque && esPuntoDeAtaque(primerAtaque.resultado) && faseArmada(r, r.acciones[r.acciones.indexOf(primerAtaque) - 1]) === 'recepcion'),
           });
         }
         if (rec) {
@@ -1783,7 +1790,7 @@ function vistaAtaque(d) {
     const cuenta = (f) => lista.filter(f).length;
     const remates = lista.filter((j) => j.golpe === 'remate');
     const conRes = lista.filter((j) => j.resultado);
-    const pts = cuenta((j) => j.resultado === 'punto');
+    const pts = cuenta((j) => esPuntoDeAtaque(j.resultado));
     const malos = cuenta((j) => j.resultado === 'error' || j.resultado === 'bloqueado');
     const dirPct = (dir) => {
       const c = remates.filter((j) => j.dir === dir).length;
