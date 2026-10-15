@@ -174,5 +174,24 @@ No probado todavía: archivo de video local (falta probarlo con un archivo real)
   (sin plantel ni este resultado) funciona.
 - Fila agregada en la tabla «Resultados del ataque» de SPEC.md. `?v=16`.
 
+### Resumen en PDF (2026-10-14)
+
+- Botón «Resumen PDF» en Estadísticas (junto a «Elegir partidos…»): arma `#resumen` y
+  llama a `window.print()`; se elige «Guardar como PDF». Sin librerías.
+- `@media print`: oculta la app, tema claro (tokens redefinidos en `:root`), A4 vertical,
+  márgenes 12 mm, `print-color-adjust: exact`, `break-inside: avoid` en secciones y tablas;
+  la página 2 empieza con `break-before: page`.
+- `document.title` mientras se imprime = «VoleyStats - <equipo scouteado> - <fecha>»
+  (rango de fechas si se suman partidos); se restaura en `afterprint`.
+- Mismo alcance y filtros que la pantalla; el encabezado lista los filtros o «Todas las jugadas».
+- Sin lógica duplicada: las vistas se separaron en `partesArmador/Ataque/Sideout/Recepcion`
+  (las usan la pantalla y el resumen), `resumenAtaques()` e `indicadores()` para los KPIs.
+- Celdas sombreadas con variables de tema (`--sombra-*`): blanco sobre oscuro en pantalla,
+  gris sobre blanco al imprimir.
+- Corregido de paso: el texto de la barra de recepción no se leía sobre los rellenos claros.
+- Probado con Chrome sin interfaz (print-to-pdf): 2 partidos sumados, con filtros, y 1 partido
+  sin jugadores asignados → siempre 2 páginas A4, sin tablas cortadas.
+- SPEC.md: «Resumen en PDF» en Estadísticas y salidas. `?v=17`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

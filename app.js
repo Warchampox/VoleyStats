@@ -1301,7 +1301,7 @@ function baseCancha(p) {
   const L = 'var(--linea-cancha)';
   let s = '';
   s += `<rect x="20" y="20" width="180" height="90" fill="var(--superficie-cancha)" stroke="${L}" stroke-width="0.7"/>`;
-  for (const y of [50, 80]) s += `<line x1="20" y1="${y}" x2="200" y2="${y}" stroke="#2E343B" stroke-width="0.4" stroke-dasharray="1.6 1.6"/>`;
+  for (const y of [50, 80]) s += `<line x1="20" y1="${y}" x2="200" y2="${y}" stroke="var(--borde-control)" stroke-width="0.4" stroke-dasharray="1.6 1.6"/>`;
   for (const x of [80, 140]) s += `<line x1="${x}" y1="20" x2="${x}" y2="110" stroke="${L}" stroke-width="0.45" opacity="0.75"/>`;
   const zonas = [
     [20, [5, 6, 1]], [80, [4, 3, 2]], [110, [2, 3, 4]], [140, [1, 6, 5]],
@@ -1730,10 +1730,11 @@ function fijarFiltros(obj) {
 function pct(a, b) { return b ? Math.round((100 * a) / b) : null; }
 function txtPct(n) { return n == null ? '—' : `${n}%`; }
 
+// Sombra según proporción: los colores salen del tema (claro al imprimir, oscuro en pantalla)
 function celda(frac, contenido, attrs = '', clase = '') {
-  const a = frac > 0 ? (0.07 + 0.6 * frac).toFixed(2) : 0;
-  const estilo = frac > 0 ? `background:rgba(230,232,235,${a});${frac > 0.6 ? 'color:var(--fondo);' : ''}` : '';
-  return `<td class="num${clase}" style="${estilo}" ${attrs}>${contenido}</td>`;
+  const sombra = frac > 0 ? ` sombra${frac > 0.6 ? ' fuerte' : ''}` : '';
+  const estilo = frac > 0 ? `--f:${frac.toFixed(3)}` : '';
+  return `<td class="num${sombra}${clase}" style="${estilo}" ${attrs}>${contenido}</td>`;
 }
 
 function marcaFiltro(obj) {
@@ -1741,7 +1742,36 @@ function marcaFiltro(obj) {
   return e.length && e.every(([d, v]) => stats.filtros[d].includes(v)) ? ' sel' : '';
 }
 
-// ---------- Vistas ----------
+// ---------- Cálculos compartidos (pantalla y resumen PDF) ----------
+
+function resumenAtaques(lista) {
+  const conRes = lista.filter((j) => j.resultado);
+  const pts = lista.filter((j) => esPuntoDeAtaque(j.resultado)).length;
+  const malos = lista.filter((j) => j.resultado === 'error' || j.resultado === 'bloqueado').length;
+  const ef = conRes.length ? Math.round((100 * (pts - malos)) / conRes.length) : null;
+  return { n: lista.length, conRes: conRes.length, pts, malos, ef };
+}
+
+function txtEficacia(ef) { return ef == null ? '—' : (ef > 0 ? '+' : '') + ef + '%'; }
+
+// Indicadores generales con los filtros activos
+function indicadores(d) {
+  const rallies = filtrar(d.rallies, 'rallies');
+  const recs = filtrar(d.recepciones, 'recepciones');
+  const ataques = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque);
+  const pos = recs.filter((r) => r.pase === '#' || r.pase === '+').length;
+  return {
+    sideOut: pct(rallies.filter((r) => r.sideOut).length, rallies.length),
+    rallies: rallies.length,
+    recPositiva: pct(pos, recs.length),
+    recepciones: recs.length,
+    eficacia: resumenAtaques(ataques).ef,
+    ataques: ataques.length,
+    primerAtaque: pct(rallies.filter((r) => r.primerPunto).length, rallies.length),
+  };
+}
+
+// ---------- Partes de las vistas ----------
 
 function tablaZonas(filas, titulo) {
   // filas: [{ etiqueta, jugadas, filtro: {dim: valor} }]
@@ -1763,7 +1793,7 @@ function canchaMini(contenido, p) {
   return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p)}${contenido}</svg>`;
 }
 
-function vistaArmador(d) {
+function partesArmador(d, p) {
   const js = filtrar(d.jugadas, 'jugadas');
   const porRot = [1, 2, 3, 4, 5, 6].map((r) => ({ etiqueta: `P${r}`, jugadas: js.filter((j) => j.rot === r), filtro: { rot: r } }));
   porRot.push({ etiqueta: 'Total', jugadas: js, filtro: {} });
@@ -1776,37 +1806,34 @@ function vistaArmador(d) {
     const c = js.filter((j) => j.armada === t).length;
     return `<span class="ley clic${marcaFiltro({ armada: t })}" data-fijar='${JSON.stringify({ armada: t })}'>${muestra(t)}${ARMADAS[t].corto} <b>${txtPct(pct(c, js.length))}</b></span>`;
   }).join('');
-  return `<p class="stats-nota">${js.length} armadas. Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
-    `<h3>Por rotación</h3>${tablaZonas(porRot, 'Rot.')}` +
-    `<h3>Por calidad de pase <span class="tenue">(solo side-out)</span></h3>${tablaZonas(porPase, 'Pase')}` +
-    `<h3>Tipo de armada</h3><div class="leyenda-fila">${porTipo}</div>` +
-    canchaMini(puntos, partido());
+  return {
+    n: js.length,
+    porRot: tablaZonas(porRot, 'Rot.'),
+    porPase: tablaZonas(porPase, 'Pase'),
+    porTipo: `<div class="leyenda-fila">${porTipo}</div>`,
+    cancha: canchaMini(puntos, p),
+  };
 }
 
-function vistaAtaque(d) {
+function partesAtaque(d, p, mapaModo) {
   const js = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque);
   const fila = (etiqueta, lista, filtro) => {
-    const n = lista.length;
-    const cuenta = (f) => lista.filter(f).length;
+    const r = resumenAtaques(lista);
     const remates = lista.filter((j) => j.golpe === 'remate');
-    const conRes = lista.filter((j) => j.resultado);
-    const pts = cuenta((j) => esPuntoDeAtaque(j.resultado));
-    const malos = cuenta((j) => j.resultado === 'error' || j.resultado === 'bloqueado');
     const dirPct = (dir) => {
       const c = remates.filter((j) => j.dir === dir).length;
       return celda(remates.length ? c / remates.length : 0, c ? txtPct(pct(c, remates.length)) : '·');
     };
-    const toques = cuenta((j) => j.golpe !== 'remate');
-    const ef = conRes.length ? Math.round((100 * (pts - malos)) / conRes.length) : null;
+    const toques = lista.filter((j) => j.golpe !== 'remate').length;
     return `<tr><th class="clic${marcaFiltro(filtro)}" data-fijar='${JSON.stringify(filtro)}'>${etiqueta}</th>` +
-      `<td class="num tenue">${n}</td>${dirPct('calle')}${dirPct('diago')}${dirPct('diago corta')}` +
-      `<td class="num">${toques ? txtPct(pct(toques, n)) : '·'}</td>` +
-      `<td class="num">${txtPct(pct(pts, conRes.length))}</td><td class="num">${txtPct(pct(malos, conRes.length))}</td>` +
-      `<td class="num"><b>${ef == null ? '—' : (ef > 0 ? '+' : '') + ef + '%'}</b></td></tr>`;
+      `<td class="num tenue">${r.n}</td>${dirPct('calle')}${dirPct('diago')}${dirPct('diago corta')}` +
+      `<td class="num">${toques ? txtPct(pct(toques, r.n)) : '·'}</td>` +
+      `<td class="num">${txtPct(pct(r.pts, r.conRes))}</td><td class="num">${txtPct(pct(r.malos, r.conRes))}</td>` +
+      `<td class="num"><b>${txtEficacia(r.ef)}</b></td></tr>`;
   };
   const filas = ORDEN_ZONAS.map((z) => fila(z, js.filter((j) => j.zona === z), { zona: z })).join('') + fila('Total', js, {});
   let mapa;
-  if (stats.mapa === 'calor') {
+  if (mapaModo === 'calor') {
     const bins = {};
     let max = 0;
     for (const j of js) {
@@ -1823,15 +1850,14 @@ function vistaAtaque(d) {
     const op = js.length > 40 ? 0.35 : js.length > 15 ? 0.55 : 0.85;
     mapa = js.map((j) => dibujarJugada({ armada: j.armadaObj, ataque: j.ataque }, op, false)).join('');
   }
-  return `<p class="stats-nota">${js.length} ataques. Dirección sobre remates; toque sobre el total de la fila. Eficacia = (puntos − errores − bloqueos) / ataques con resultado.</p>` +
-    `<table class="tabla"><tr><th>Zona</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Toque</th><th>Punto</th><th>Err+Bl</th><th>Efic.</th></tr>${filas}</table>` +
-    `<div class="fila-titulo"><h3>Impactos</h3><div class="selector" id="selector-mapa">` +
-    `<button data-mapa="trayectorias" class="${stats.mapa === 'trayectorias' ? 'activo' : ''}">Trayectorias</button>` +
-    `<button data-mapa="calor" class="${stats.mapa === 'calor' ? 'activo' : ''}">Calor</button></div></div>` +
-    canchaMini(mapa, partido());
+  return {
+    n: js.length,
+    tabla: `<table class="tabla"><tr><th>Zona</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Toque</th><th>Punto</th><th>Err+Bl</th><th>Efic.</th></tr>${filas}</table>`,
+    cancha: canchaMini(mapa, p),
+  };
 }
 
-function vistaSideout(d) {
+function partesSideout(d) {
   const rs = filtrar(d.rallies, 'rallies');
   const fila = (etiqueta, lista, filtro) => {
     const n = lista.length;
@@ -1845,12 +1871,13 @@ function vistaSideout(d) {
   const cab = (t) => `<tr><th>${t}</th><th>Recibe</th><th>Gana</th><th>Side-out</th><th></th><th>1er ataque</th></tr>`;
   const porRot = [1, 2, 3, 4, 5, 6].map((r) => fila(`P${r}`, rs.filter((x) => x.rot === r), { rot: r })).join('') + fila('Total', rs, {});
   const porPase = CALIFS.map((c) => fila(c, rs.filter((x) => x.pase === c), { pase: c })).join('');
-  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partido().scouteado))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
-    `<h3>Por rotación</h3><table class="tabla">${cab('Rot.')}${porRot}</table>` +
-    `<h3>Por calidad de pase</h3><table class="tabla">${cab('Pase')}${porPase}</table>`;
+  return {
+    porRot: `<table class="tabla">${cab('Rot.')}${porRot}</table>`,
+    porPase: `<table class="tabla">${cab('Pase')}${porPase}</table>`,
+  };
 }
 
-function vistaRecepcion(d) {
+function partesRecepcion(d) {
   const rs = filtrar(d.recepciones, 'recepciones');
   const n = rs.length;
   const cuenta = (c) => rs.filter((r) => r.pase === c).length;
@@ -1859,7 +1886,7 @@ function vistaRecepcion(d) {
     return k ? `<span class="seg ${CALIF[c].clase}" style="flex:${k}" data-fijar='${JSON.stringify({ pase: c })}' title="${c}: ${k}">${c} ${txtPct(pct(k, n))}</span>` : '';
   }).join('');
   const pos = cuenta('#') + cuenta('+');
-  const resumen = `<div class="kpis"><div><b>${n}</b><span>recepciones</span></div>` +
+  const kpis = `<div class="kpis"><div><b>${n}</b><span>recepciones</span></div>` +
     `<div><b>${txtPct(pct(pos, n))}</b><span>positiva (# +)</span></div>` +
     `<div><b>${txtPct(pct(cuenta('#'), n))}</b><span>perfecta</span></div>` +
     `<div><b>${txtPct(pct(cuenta('='), n))}</b><span>error</span></div></div>`;
@@ -1872,12 +1899,143 @@ function vistaRecepcion(d) {
   };
   const cab = (t) => `<tr><th>${t}</th><th>n</th>${CALIFS.map((c) => `<th>${c}</th>`).join('')}<th>Posit.</th><th>Error</th></tr>`;
   const conJugador = [...new Set(rs.filter((r) => r.jugador != null).map((r) => r.jugador))].sort((a, b) => a - b);
-  const porJug = conJugador.length
-    ? `<h3>Por jugador</h3><table class="tabla">${cab('Jug.')}${conJugador.map((j) => fila(`#${j}`, rs.filter((r) => r.jugador === j), { jugador: j })).join('')}</table>`
-    : '<p class="stats-nota">Asigna jugadores a las recepciones para ver la tabla por jugador.</p>';
   const porRot = [1, 2, 3, 4, 5, 6].map((r) => fila(`P${r}`, rs.filter((x) => x.rot === r), { rot: r })).join('');
-  return resumen + (n ? `<div class="barra-calif">${barra}</div>` : '') + porJug +
-    `<h3>Por rotación</h3><table class="tabla">${cab('Rot.')}${porRot}</table>`;
+  return {
+    n,
+    kpis,
+    barra: n ? `<div class="barra-calif">${barra}</div>` : '',
+    porJugador: conJugador.length
+      ? `<table class="tabla">${cab('Jug.')}${conJugador.map((j) => fila(`#${j}`, rs.filter((r) => r.jugador === j), { jugador: j })).join('')}</table>`
+      : '',
+    porRot: `<table class="tabla">${cab('Rot.')}${porRot}</table>`,
+  };
+}
+
+// ---------- Vistas en pantalla ----------
+
+function vistaArmador(d) {
+  const a = partesArmador(d, partido());
+  return `<p class="stats-nota">${a.n} armadas. Porcentaje de cada fila según zona de ataque. Clic en una celda filtra los clips.</p>` +
+    `<h3>Por rotación</h3>${a.porRot}` +
+    `<h3>Por calidad de pase <span class="tenue">(solo side-out)</span></h3>${a.porPase}` +
+    `<h3>Tipo de armada</h3>${a.porTipo}` +
+    a.cancha;
+}
+
+function vistaAtaque(d) {
+  const a = partesAtaque(d, partido(), stats.mapa);
+  return `<p class="stats-nota">${a.n} ataques. Dirección sobre remates; toque sobre el total de la fila. Eficacia = (puntos − errores − bloqueos) / ataques con resultado.</p>` +
+    a.tabla +
+    `<div class="fila-titulo"><h3>Impactos</h3><div class="selector" id="selector-mapa">` +
+    `<button data-mapa="trayectorias" class="${stats.mapa === 'trayectorias' ? 'activo' : ''}">Trayectorias</button>` +
+    `<button data-mapa="calor" class="${stats.mapa === 'calor' ? 'activo' : ''}">Calor</button></div></div>` +
+    a.cancha;
+}
+
+function vistaSideout(d) {
+  const a = partesSideout(d);
+  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partido().scouteado))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
+    `<h3>Por rotación</h3>${a.porRot}` +
+    `<h3>Por calidad de pase</h3>${a.porPase}`;
+}
+
+function vistaRecepcion(d) {
+  const a = partesRecepcion(d);
+  return a.kpis + a.barra +
+    (a.porJugador ? `<h3>Por jugador</h3>${a.porJugador}` : '<p class="stats-nota">Asigna jugadores a las recepciones para ver la tabla por jugador.</p>') +
+    `<h3>Por rotación</h3>${a.porRot}`;
+}
+
+// ---------- Resumen en PDF (window.print con hoja @media print) ----------
+
+function textoFiltro(dim, v) {
+  switch (dim) {
+    case 'set': return `set ${v}`;
+    case 'rot': return `P${v}`;
+    case 'pase': return `pase ${v}`;
+    case 'fase': return FASES[v].toLowerCase();
+    case 'armada': return ARMADAS[v].nombre.toLowerCase();
+    case 'zona': return v;
+    case 'golpe': return GOLPES[v].nombre.toLowerCase();
+    case 'resultado': return RESULTADOS[v].nombre.toLowerCase();
+    case 'jugador': return `#${v}`;
+    default: return String(v);
+  }
+}
+
+function leyendaResultados() {
+  return `<div class="leyenda-fila">${Object.keys(RESULTADOS).map((r) =>
+    `<span class="ley">${simboloMini(r)}${esc(RESULTADOS[r].nombre)}</span>`).join('')}</div>`;
+}
+
+// Línea por partido, desde el punto de vista del equipo scouteado
+function lineaPartido(x) {
+  const scout = x.scouteado;
+  const i = scout === 'propio' ? 0 : 1;
+  const g = setsGanados(x);
+  const sets = x.sets.filter((st) => st.rallies.length).map((st) => {
+    const m = st.final || marcadorTras(st);
+    return `${m[i]}-${m[1 - i]}${st.final ? '' : '*'}`;
+  });
+  const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
+  return `<div><b>vs ${esc(nombre(otro(scout), x))}</b> · ${esc(fmtFecha(x.fecha))} · ` +
+    `<b>${g[i]}–${g[1 - i]}</b>${sets.length ? ' · ' + sets.join(' ') : ''} · ${rallies} rallies</div>`;
+}
+
+function htmlResumen(d, partidos) {
+  const p = partido();
+  const scoutNom = nombre(p.scouteado);
+  const k = indicadores(d);
+  const filtros = Object.entries(stats.filtros).flatMap(([dim, vals]) => vals.map((v) => textoFiltro(dim, v)));
+  const arm = partesArmador(d, p);
+  const atq = partesAtaque(d, p, 'trayectorias');
+  const so = partesSideout(d);
+  const rec = partesRecepcion(d);
+  const enCurso = partidos.some((x) => x.sets.some((st) => st.rallies.length && !st.final));
+  const kpi = (valor, nombreKpi, detalle) => `<div><b>${valor}</b><span>${nombreKpi}</span><small>${detalle}</small></div>`;
+  return `<div class="hoja">` +
+    `<header class="r-cab"><div class="r-marca">VoleyStats · Resumen de scouting</div>` +
+    `<h1>${esc(scoutNom)}</h1>` +
+    `<div class="r-partidos">${partidos.map(lineaPartido).join('')}</div>` +
+    `<div class="r-meta">Marcadores desde el punto de vista de ${esc(scoutNom)}${enCurso ? ' · * set sin terminar' : ''} · ` +
+    `<b>${filtros.length ? 'Filtros: ' + esc(filtros.join(', ')) : 'Todas las jugadas'}</b></div></header>` +
+    `<div class="r-kpis">` +
+    kpi(txtPct(k.sideOut), 'Side-out', `${k.rallies} rallies recibiendo`) +
+    kpi(txtPct(k.recPositiva), 'Recepción positiva (# +)', `${k.recepciones} recepciones`) +
+    kpi(txtEficacia(k.eficacia), 'Eficacia de ataque', `${k.ataques} ataques`) +
+    kpi(txtPct(k.primerAtaque), 'Punto en 1er ataque', 'tras recepción') +
+    `</div>` +
+    `<section class="r-sec"><h2>Distribución del armador <span>${arm.n} armadas · % de cada fila por zona de ataque</span></h2>` +
+    `<div class="r-2col"><div><h3>Por rotación</h3>${arm.porRot}</div>` +
+    `<div><h3>Por calidad de pase (side-out)</h3>${arm.porPase}</div></div></section>` +
+    `<section class="r-sec"><h2>Dónde cae la armada <span>${esc(scoutNom)} a la izquierda, atacando hacia la derecha</span></h2>` +
+    `<div class="r-cancha">${arm.cancha}</div>${arm.porTipo}</section>` +
+    `</div>` +
+    `<div class="hoja salto">` +
+    `<section class="r-sec"><h2>Ataque por zona <span>${atq.n} ataques · dirección sobre remates · eficacia = (puntos − errores − bloqueos) / ataques con resultado</span></h2>` +
+    `${atq.tabla}<div class="r-cancha chica">${atq.cancha}</div>${leyendaResultados()}</section>` +
+    `<section class="r-sec"><h2>Side-out <span>rallies en que ${esc(scoutNom)} recibe · 1er ataque = punto directo tras la recepción</span></h2>` +
+    `<div class="r-2col"><div><h3>Por rotación</h3>${so.porRot}</div><div><h3>Por calidad de pase</h3>${so.porPase}</div></div></section>` +
+    `<section class="r-sec"><h2>Recepción <span>${rec.n} recepciones</span></h2>${rec.barra}` +
+    `<div class="r-2col"><div><h3>Por rotación</h3>${rec.porRot}</div>` +
+    (rec.porJugador ? `<div><h3>Por jugador</h3>${rec.porJugador}</div>` : '') + `</div></section>` +
+    `<footer class="r-pie">Generado con VoleyStats · ${esc(fmtFecha(hoyIso()))}</footer>` +
+    `</div>`;
+}
+
+function imprimirResumen() {
+  const p = partido();
+  if (!p) return;
+  const partidos = partidosIncluidos();
+  const d = recolectar(partidos);
+  $('resumen').innerHTML = htmlResumen(d, partidos);
+  const fechas = partidos.map((x) => x.fecha).filter(Boolean).sort();
+  const fecha = !fechas.length ? hoyIso() : fechas[0] === fechas[fechas.length - 1] ? fechas[0] : `${fechas[0]} a ${fechas[fechas.length - 1]}`;
+  const titulo = document.title;
+  document.title = `VoleyStats - ${nombre(p.scouteado)} - ${fecha}`;
+  const restaurar = () => { document.title = titulo; window.removeEventListener('afterprint', restaurar); };
+  window.addEventListener('afterprint', restaurar);
+  window.print();
 }
 
 // ---------- Panel de filtros y alcance ----------
@@ -1921,7 +2079,8 @@ function renderAlcance() {
     `<div><span class="etiqueta">Scouteando</span> <b>${esc(nombre(p.scouteado))}</b>` +
     `<div class="tenue mono">${incl.length === 1 ? esc(`${nombre('rival', incl[0])} vs ${nombre('propio', incl[0])} · ${fmtFecha(incl[0].fecha)}`) : `${incl.length} partidos sumados`}` +
     ` · ${compat.length} ${compat.length === 1 ? 'partido guardado' : 'partidos guardados'} de este equipo</div></div>` +
-    `<button class="btn" id="elegir-partidos">Elegir partidos…</button>`;
+    `<div class="alcance-botones"><button class="btn" id="elegir-partidos">Elegir partidos…</button>` +
+    `<button class="btn" id="resumen-pdf" title="Arma un resumen y abre el diálogo de impresión: elige «Guardar como PDF»">Resumen PDF</button></div>`;
 }
 
 function renderAvisoStats() {
@@ -2044,7 +2203,8 @@ function conectarStats() {
     if (mapa) { stats.mapa = mapa.dataset.mapa; renderStats(); return; }
     if (t.closest('#plegar-filtros')) { stats.filtrosAbiertos = !stats.filtrosAbiertos; renderStats(); return; }
     if (t.closest('#limpiar-filtros')) { for (const k of Object.keys(stats.filtros)) stats.filtros[k] = []; renderStats(); return; }
-    if (t.closest('#elegir-partidos')) dialogoElegirPartidos();
+    if (t.closest('#elegir-partidos')) { dialogoElegirPartidos(); return; }
+    if (t.closest('#resumen-pdf')) imprimirResumen();
   });
   $('clips-lista').addEventListener('click', (ev) => {
     const f = ev.target.closest('.fila-clip');

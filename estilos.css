@@ -30,6 +30,12 @@
   --calif-mala: #8B929B;
   --error: #E5534B;
 
+  /* Celdas sombreadas de las tablas de estadísticas (claro sobre oscuro) */
+  --sombra-rgb: 230, 232, 235;
+  --sombra-base: 0.07;
+  --sombra-rango: 0.6;
+  --sombra-texto: var(--fondo);
+
   --sans: "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -516,6 +522,8 @@ body.modo-stats .solo-captura { display: none !important; }
 .kpis b { font-family: var(--mono); font-size: 20px; font-weight: 600; }
 .kpis span { font-size: 11.5px; color: var(--texto-3); }
 .barra-calif { display: flex; gap: 3px; height: 26px; margin-top: 4px; }
+/* Texto legible sobre los rellenos de calificación (claros en pantalla, oscuros al imprimir) */
+.barra-calif .seg.calif-perfecta, .barra-calif .seg.calif-buena, .barra-calif .seg.calif-regular { color: var(--fondo); }
 .barra-calif .seg {
   display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden;
   border-radius: 4px; font-family: var(--mono); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
@@ -555,3 +563,91 @@ body.modo-stats .solo-captura { display: none !important; }
 .tanteo .num, .tanteo .guion { flex: none; }
 .sub-marcador { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rot-cab .nota { flex: none; }
+
+.tabla td.sombra { background: rgba(var(--sombra-rgb), calc(var(--sombra-base) + var(--sombra-rango) * var(--f))); }
+.tabla td.sombra.fuerte { color: var(--sombra-texto); }
+.alcance-botones { display: flex; gap: 6px; flex: none; }
+
+/* ---------- Resumen en PDF ----------
+   En pantalla no se ve. Al imprimir se oculta toda la app y solo queda el resumen,
+   con tema claro y A4 vertical. */
+
+.resumen { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+
+  :root {
+    --fondo: #ffffff;
+    --panel: #ffffff;
+    --panel-estado: #ffffff;
+    --superficie-cancha: #f3f4f5;
+    --borde: #d6d9dd;
+    --borde-control: #c4c8cd;
+    --borde-fuerte: #9aa0a7;
+    --tecla: #eef0f2;
+    --texto: #111316;
+    --texto-2: #33373c;
+    --texto-3: #5f656d;
+    --apagado: #8a9098;
+    --linea-cancha: #6b727b;
+    --zona-numero: #b4b9bf;
+    --calif-perfecta: #1f2328;
+    --calif-buena: #4f565e;
+    --calif-regular: #8a9098;
+    --calif-mala: #5f656d;
+    --sombra-rgb: 17, 19, 22;
+    --sombra-base: 0.04;
+    --sombra-rango: 0.34;
+    --sombra-texto: #111316;
+  }
+
+  html, body { height: auto; background: #fff !important; }
+  body > *:not(.resumen) { display: none !important; }
+
+  .resumen {
+    display: block;
+    color: var(--texto);
+    font-family: var(--sans);
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .resumen * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .resumen .hoja.salto { break-before: page; }
+  .resumen section, .resumen .r-kpis, .resumen .r-cab, .resumen table, .resumen .r-cancha { break-inside: avoid; }
+
+  .r-cab { border-bottom: 1.5px solid var(--texto); padding-bottom: 6px; margin-bottom: 8px; }
+  .r-marca { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--texto-3); }
+  .r-cab h1 { margin: 2px 0 4px; font-size: 20px; font-weight: 600; }
+  .r-partidos { display: flex; flex-direction: column; gap: 1px; font-size: 10.5px; }
+  .r-meta { margin-top: 4px; font-size: 9px; color: var(--texto-3); }
+  .r-meta b { color: var(--texto); font-weight: 600; }
+
+  .r-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+  .r-kpis div { border: 1px solid var(--borde); border-radius: 5px; padding: 5px 8px; display: flex; flex-direction: column; }
+  .r-kpis b { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+  .r-kpis span { font-size: 9.5px; font-weight: 500; }
+  .r-kpis small { font-size: 8.5px; color: var(--texto-3); }
+
+  .r-sec { margin-bottom: 10px; }
+  .r-sec h2 { margin: 0 0 4px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--borde); padding-bottom: 2px; }
+  .r-sec h2 span { font-weight: 400; font-size: 8.5px; color: var(--texto-3); margin-left: 6px; }
+  .r-sec h3 { margin: 4px 0 2px; font-family: var(--mono); font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--texto-3); font-weight: 500; }
+  .r-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+
+  .resumen .tabla { font-size: 9px; }
+  .resumen .tabla th, .resumen .tabla td { padding: 2px 4px; font-size: 9px; }
+  .resumen .tabla th { font-size: 8.5px; }
+  .resumen .tabla .sel, .resumen .ley.sel { outline: none; }
+  .resumen .barra-celda span { height: 5px; }
+  .resumen .leyenda-fila { font-size: 9px; gap: 3px 10px; margin-top: 4px; color: var(--texto-2); }
+  .resumen .barra-calif { height: 18px; margin: 2px 0 6px; }
+  .resumen .barra-calif .seg { font-size: 9px; }
+  .resumen .calif-error { color: var(--error); }
+
+  .r-cancha { width: 86%; margin: 2px auto 0; }
+  .r-cancha.chica { width: 62%; }
+  .r-cancha .cancha-mini { margin: 0; }
+
+  .r-pie { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--borde); font-size: 8.5px; color: var(--texto-3); text-align: right; }
+}

@@ -153,6 +153,8 @@ La salida central es la distribución del armador según la rotación y la calid
 
 **Lista de clips:** cada filtro produce una lista de jugadas; un click salta al segundo exacto del video.
 
+**Resumen en PDF:** desde Estadísticas, un resumen de 2 páginas A4 para compartir (por ejemplo, por WhatsApp), con el mismo alcance y filtros de la pantalla: encabezado con partidos y resultados, indicadores (side-out, recepción positiva, eficacia de ataque, punto en el 1er ataque), distribución del armador, cancha con las armadas, ataque por zona con trayectorias, side-out y recepción. Se genera con el diálogo de impresión del navegador («Guardar como PDF»).
+
 Estadísticas por jugador quedan como extra si salen fáciles del mismo modelo. Las vistas se irán ajustando con el uso.
 
 ## Fases
