@@ -1180,9 +1180,9 @@ function contenidoEstado(e) {
         principales: [
           principal('1', nombre('propio')),
           principal('2', nombre('rival')),
-          principal('3', saca ? `Ace de ${nombre(saca)}` : 'Ace'),
-          principal('4', saca ? `Error de saque de ${nombre(saca)}` : 'Error de saque'),
-          principal('5', `Bloqueo del ${scoutNom}`),
+          principal('3', saca ? `Ace · ${nombre(saca)}` : 'Ace'),
+          principal('4', saca ? `Err. saque · ${nombre(saca)}` : 'Error de saque'),
+          principal('5', `Bloqueo · ${scoutNom}`),
         ],
         secundarias: [secundaria('Esc', 'cancelar')] };
     }
@@ -1335,7 +1335,7 @@ function renderEstado() {
   const aviso = ui.aviso && ui.aviso.hasta > Date.now() ? ui.aviso.texto : null;
   const kbdTecla = (t) => `<kbd>${esc(t)}</kbd>`;
   const prin = c.principales.map((x) =>
-    `<div class="tecla-p${x.activa ? ' activa' : ''}">${kbd(x.tecla, x.activa)}${x.extra}<span>${esc(x.texto)}</span></div>`).join('');
+    `<div class="tecla-p${x.activa ? ' activa' : ''}">${kbd(x.tecla, x.activa)}${x.extra}<span title="${esc(x.texto)}">${esc(x.texto)}</span></div>`).join('');
   const sec = c.secundarias.map((x) =>
     `<span class="item${x.activa ? ' activa' : ''}">${x.teclas.length === 2 && x.texto === 'defensa' ? `${kbdTecla(x.teclas[0])}–${kbdTecla(x.teclas[1])}` : x.teclas.map(kbdTecla).join('')} ${esc(x.texto)}</span>`).join('');
   $('estado').innerHTML =

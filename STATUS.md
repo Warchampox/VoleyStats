@@ -265,9 +265,20 @@ No existe modo para corregir un rally pasado → el lápiz de la lista queda fue
 Probado a 1440×812 en el navegador: captura (Ahora 262 px, sin scroll), ayuda, lista abierta,
 modo foco, las 4 pestañas, filtros, «ver jugadas» y clips del lateral. Sin errores de consola.
 
-**Pendiente de revisar (no alcanzó la sesión):** resumen PDF con las vistas nuevas (paso 8 del
-brief; los cálculos del PDF no cambiaron, pero hay que confirmar las 2 páginas), pantalla de
-1280 px de ancho, y una pasada completa de captura con teclado tras el rediseño.
+### Revisión final del rediseño v2 (2026-10-16)
+
+- Pasada completa de captura con teclado: 6 rallies con recepción + pase, emergencia, toque,
+  defendido, defensa, segunda, pipe, alta con Z, rejugado → cobertura, usa el bloque,
+  G → 3 / 4 / 5, tecla que no aplica, F / B y Ctrl+Z. Marcador, saque, rotación, zonas y fases
+  correctos; «Ahora» fijo en 262 px en todos los pasos.
+- Corregido: etiquetas que se cortaban en «Ahora» («Usa el bloque» en Resultado y el error de
+  saque en el cierre con G: ahora «Err. saque · equipo»). Texto completo al pasar el mouse.
+- 1280×800: captura sin cortes ni scroll (video 752×423, cancha 480×284). Corregido: la nota
+  «Revisando» con la lista abierta se omite bajo 1400 px; en Ataque con el video lateral, la barra
+  de dirección se achica y los textos de las tarjetas quedan en una línea.
+- Resumen PDF con las vistas nuevas: 2 páginas A4 en tres variantes (2 partidos, con filtros, sin
+  jugadores). Corregido: la primera columna de las tablas se imprimía más grande que el resto.
+- `?v=21`.
 
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

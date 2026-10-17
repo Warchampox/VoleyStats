@@ -230,6 +230,10 @@ body.lista-abierta .cuerpo {
 }
 body.lista-abierta .historial { display: none; }
 body.lista-abierta .nota-revisando { display: flex; }
+/* Bajo ~1400 px no queda espacio al lado del video achicado: la nota se omite */
+@media (max-width: 1399px) {
+  body.lista-abierta .nota-revisando { display: none; }
+}
 
 .col-der { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
 
@@ -450,7 +454,8 @@ body.lista-abierta .anteriores-lista { display: block; }
 .tecla-p span { overflow: hidden; text-overflow: ellipsis; }
 .tecla-p .muestra { width: 18px; }
 .tecla-p.activa span { color: var(--texto); font-weight: 600; }
-.ahora-teclas.c3 .tecla-p { font-size: 13.5px; gap: 7px; }
+.ahora-teclas.c3 .tecla-p { font-size: 13px; gap: 6px; }
+.ahora-teclas.c3 .tecla-p .simbolo { width: 18px; }
 .ahora-sec { flex: none; display: flex; align-items: center; flex-wrap: nowrap; gap: 16px; padding-top: 8px; border-top: 1px solid var(--borde); font-size: 12px; color: var(--texto-3); white-space: nowrap; overflow: hidden; }
 .ahora-sec .item { display: inline-flex; align-items: center; gap: 5px; }
 .ahora-sec kbd { min-width: 18px; height: 18px; font-size: 10.5px; padding: 0 4px; }
@@ -693,21 +698,23 @@ body.modo-stats.lateral .cuerpo::before { content: ""; grid-area: v; background:
 /* ---------- Pestaña Ataque ---------- */
 
 .ataque-resumen { display: flex; align-items: center; gap: 28px; height: 40px; }
-.barra-dir { display: flex; gap: 2px; width: 420px; height: 10px; flex: none; }
+.barra-dir { display: flex; gap: 2px; width: 420px; min-width: 120px; height: 10px; flex: 0 1 420px; }
 .barra-dir span { height: 100%; border-radius: 2px; }
-.dir-textos { display: flex; gap: 18px; color: var(--texto-3); font-size: 15px; white-space: nowrap; }
+.dir-textos { display: flex; gap: 18px; color: var(--texto-3); font-size: 15px; white-space: nowrap; flex: none; }
 .dir-textos b { color: var(--texto); font-weight: 600; }
-.efic-total { margin-left: auto; font-size: 15px; color: var(--texto-3); white-space: nowrap; }
+.efic-total { margin-left: auto; font-size: 15px; color: var(--texto-3); white-space: nowrap; flex: none; }
+.ataque-resumen { min-width: 0; }
 .efic-total b { font-family: var(--mono); font-size: 18px; color: var(--texto); }
 .tarjetas-ataque { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .tarjeta { background: var(--fondo-secundario); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; border: 1px solid transparent; }
 .tarjeta:hover { border-color: var(--borde-control); }
-.tarjeta .cab { display: flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--texto-3); }
+.tarjeta .cab { display: flex; align-items: baseline; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--texto-3); white-space: nowrap; min-width: 0; }
 .tarjeta .cab b { font-size: 14px; color: var(--texto); }
 .tarjeta .cab .efic { margin-left: auto; color: var(--texto-2); }
 .tarjeta svg { width: 100%; height: auto; display: block; }
 .tarjeta svg text { font-family: var(--mono); }
-.tarjeta .pie { font-family: var(--mono); font-size: 11px; color: var(--apagado); }
+.tarjeta .pie { font-family: var(--mono); font-size: 11px; color: var(--apagado); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tarjeta { min-width: 0; }
 /* ---------- Diálogos propios ---------- */
 
 .modal {
@@ -846,6 +853,9 @@ body.modo-stats.lateral .cuerpo::before { content: ""; grid-area: v; background:
   .resumen .tabla { font-size: 9px; }
   .resumen .tabla th, .resumen .tabla td { padding: 2px 4px; font-size: 9px; }
   .resumen .tabla th { font-size: 8.5px; }
+  .resumen .tabla tr > th:first-child { font-size: 9px; letter-spacing: 0; }
+  .resumen .tabla tr:first-child > th:first-child { font-size: 8.5px; }
+  .resumen .tabla tr.total td, .resumen .tabla tr.total th { color: var(--texto-2); }
   .resumen .tabla .sel, .resumen .ley.sel { outline: none; }
   .resumen .barra-celda span { height: 5px; }
   .resumen .leyenda-fila { font-size: 9px; gap: 3px 10px; margin-top: 4px; color: var(--texto-2); }
