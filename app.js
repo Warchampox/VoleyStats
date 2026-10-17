@@ -408,7 +408,7 @@ function destino(ataque) {
   return dentro(ataque.punto) ? 'Z' + zonaPunto(ataque.punto) : 'fuera';
 }
 
-// "diago · Z5"; con toque: "t. corto · diago · Z3"
+// "diago, Z5"; con toque: "t. corto, diago, Z3"
 function textoAtaque(armada, ataque, conGolpe = true) {
   const partes = [];
   if (conGolpe && ataque.golpe !== 'remate') partes.push(GOLPES[ataque.golpe].corto);
@@ -416,7 +416,7 @@ function textoAtaque(armada, ataque, conGolpe = true) {
   if (d) partes.push(d);
   const z = destino(ataque);
   if (z) partes.push(z);
-  return partes.join(' · ');
+  return partes.join(', ');
 }
 
 // Pares armada → ataque de un rally
@@ -1066,8 +1066,8 @@ function renderMarcador() {
   $('chips-rotacion').innerHTML = [1, 2, 3, 4, 5, 6]
     .map((n) => `<button data-rot="${n}" class="${rot === n ? 'activo' : ''}" title="Corregir: armador en P${n}">P${n}</button>`).join('');
   // Modo foco: el marcador en una sola línea
-  $('marcador-linea').innerHTML = `<b>${m[0]}–${m[1]}</b> · ${saca ? `saca ${esc(nombre(saca))} · ` : ''}set ${set.numero}` +
-    (rot ? ` · armador <b>P${rot}</b>` : '');
+  $('marcador-linea').innerHTML = `<b>${m[0]}–${m[1]}</b>&ensp;${saca ? `saca ${esc(nombre(saca))}, ` : ''}set ${set.numero}` +
+    (rot ? `, armador <b>P${rot}</b>` : '');
 }
 
 function kbd(tecla, principal = false) {
@@ -1143,7 +1143,7 @@ function contenidoEstado(e) {
       const n = set.rallies.length;
       const giro = rot && fueSideOut(ultimo, p.scouteado) ? `Side-out: el armador pasa a P${rot}. ` : '';
       return { ...base,
-        titulo: `Rally ${n} cerrado · ${ultimo.motivo ? MOTIVOS[ultimo.motivo].nombre.toLowerCase() + ' · ' : ''}punto ${nombre(ultimo.gana)}`,
+        titulo: ultimo.motivo ? `Rally ${n} · ${MOTIVOS[ultimo.motivo].nombre.toLowerCase()}, punto ${nombre(ultimo.gana)}` : `Rally ${n} cerrado · punto ${nombre(ultimo.gana)}`,
         contexto: `${giro}Saca ${nombre(sacaSiguiente(set))}${giro ? '' : ', ' + rotTxt}.`,
         principales: [principal('Enter', `Nuevo rally ${n + 1} en el segundo actual`, '', true)], secundarias: sec };
     }
@@ -1208,7 +1208,7 @@ function contenidoEstado(e) {
       else if (ult.tipo === 'saque') fase = `Saca ${scoutNom}: la siguiente armada es contraataque`;
       else if (ult.resultado === 'rejugado') fase = 'Cobertura tras «rejugado»';
       else fase = `Contraataque tras «${RESULTADOS[ult.resultado].nombre.toLowerCase()}»`;
-      return { ...base, tipo: pase ? 'tecla · clic opcional' : 'tecla', titulo: 'Tipo de armada',
+      return { ...base, tipo: pase ? 'tecla o clic opcional' : 'tecla', titulo: 'Tipo de armada',
         contexto: fase + (pase ? ' · clic donde queda el pase (opcional)' : ''),
         principales: tiposArmada(),
         secundarias: [
@@ -1221,7 +1221,7 @@ function contenidoEstado(e) {
     case 'armadaClic': {
       const tipo = pendiente.armada;
       const color = colorVar(ARMADAS[tipo].variable);
-      const zag = tipo === 'pipe' ? 'la pipe siempre es de zaguero' : pendiente.zaguero ? 'ataque de zaguero (Z5 · Z6 · Z1)' : 'ataque delantero (Z4 · Z3 · Z2)';
+      const zag = tipo === 'pipe' ? 'la pipe siempre es de zaguero' : pendiente.zaguero ? 'ataque de zaguero (Z5, Z6, Z1)' : 'ataque delantero (Z4, Z3, Z2)';
       return { ...base, tipo: 'clic en la cancha', icono: mira(color),
         titulo: tipo === 'segunda' ? 'Clic donde toca el armador' : 'Clic donde cae la armada',
         contexto: `${ARMADAS[tipo].nombre} · ${zag}`,
@@ -1235,7 +1235,7 @@ function contenidoEstado(e) {
     case 'golpe': {
       const g = pendiente.golpe;
       const segunda = e.ultima.armada === 'segunda';
-      return { ...base, tipo: 'clic en la cancha', icono: mira(colorVar('--texto')),
+      return { ...base, tipo: 'clic en la cancha', icono: mira(colorVar('--tinta')),
         titulo: segunda ? 'Clic donde cae el balón' : 'Clic donde pega el balón',
         contexto: (segunda ? 'Segunda del armador · ' : '') + (g === 'remate' ? 'remate por defecto; C o V antes del clic si fue toque' : `${GOLPES[g].nombre}: clic donde pega o cae`),
         principales: [
@@ -1268,7 +1268,8 @@ function jugadoresDe(equipo, p = partido()) {
 function textoJugador(num, p = partido()) {
   const j = p && jugadoresDe(p.scouteado, p).find((x) => x.num === num);
   if (!j) return `#${num}`;
-  return [`#${num}`, j.nombre, j.pos && POSICIONES[j.pos].nombre].filter(Boolean).join(' · ');
+  const resto = [j.nombre, j.pos && POSICIONES[j.pos].nombre.toLowerCase()].filter(Boolean).join(', ');
+  return resto ? `#${num} ${resto}` : `#${num}`;
 }
 
 const DESTINO_JUGADOR = { recepcion: 'Última recepción', defensa: 'Última defensa', ataque: 'Último ataque' };
@@ -1412,8 +1413,8 @@ function baseCancha(p) {
   s += `<line x1="110" y1="14" x2="110" y2="116" stroke="var(--texto)" stroke-width="1.1"/>`;
   s += `<circle cx="110" cy="14" r="1.1" fill="var(--texto)"/><circle cx="110" cy="116" r="1.1" fill="var(--texto)"/>`;
   if (p) {
-    s += `<text x="20" y="11" font-size="4.6" fill="var(--texto-3)" letter-spacing="0.4">${esc(nombre(p.scouteado).toUpperCase())} · ataca →</text>`;
-    s += `<text x="200" y="11" font-size="4.6" fill="var(--texto-3)" text-anchor="end" letter-spacing="0.4">${esc(nombre(otro(p.scouteado)).toUpperCase())}</text>`;
+    s += `<text x="20" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)">${esc(nombre(p.scouteado))} ataca →</text>`;
+    s += `<text x="200" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)" text-anchor="end">${esc(nombre(otro(p.scouteado)))}</text>`;
   }
   return s;
 }
@@ -1645,9 +1646,9 @@ function renderHistorial() {
   let pie = '';
   if (r.gana) {
     const m = [r.marcador[0] + (r.gana === 'propio' ? 1 : 0), r.marcador[1] + (r.gana === 'rival' ? 1 : 0)];
-    pie = `<div class="hist-pie">Gana ${esc(nombre(r.gana))}${r.motivo ? ' · ' + MOTIVOS[r.motivo].nombre.toLowerCase() : ''} · ${m[0]}–${m[1]}</div>`;
+    pie = `<div class="hist-pie">Gana ${esc(nombre(r.gana))}${r.motivo ? ' (' + MOTIVOS[r.motivo].nombre.toLowerCase() + ')' : ''} · ${m[0]}–${m[1]}</div>`;
   }
-  cont.innerHTML = `<div class="hist-cab"><b>Rally ${idx + 1}</b>saca ${esc(nombre(r.saca))} · ${r.marcador[0]}–${r.marcador[1]}${rot ? ' · P' + rot : ''}</div>` +
+  cont.innerHTML = `<div class="hist-cab"><b>Rally ${idx + 1}</b>saca ${esc(nombre(r.saca))}, ${r.marcador[0]}–${r.marcador[1]}${rot ? ', P' + rot : ''}</div>` +
     filas + pendiente + pie;
   cont.scrollTop = cont.scrollHeight;
 }
@@ -1679,7 +1680,7 @@ function resumenUltimoRally(set, p) {
   const ult = jugadas(r).filter((j) => j.ataque).pop();
   const como = r.motivo ? MOTIVOS[r.motivo].nombre.toLowerCase()
     : ult && ult.ataque.resultado ? `${RESULTADOS[ult.ataque.resultado].nombre.toLowerCase()} desde ${zonaAtaque(ult.armada)}` : 'punto';
-  return `R${n} · ${nombre(r.gana, p)} · ${como}`;
+  return `R${n}  ${nombre(r.gana, p)}, ${como}`;
 }
 
 function filaAnterior(set, r, i, p) {
@@ -1721,7 +1722,7 @@ function renderAnteriores() {
       const ganaSet = m[0] > m[1] ? 'propio' : 'rival';
       const abiertoSet = !!(ui.setsAbiertos && ui.setsAbiertos[st.numero]);
       html += `<div class="set-plegado" data-set-plegado="${st.numero}"><span class="flecha">${abiertoSet ? '▾' : '▸'}</span>` +
-        `Set ${st.numero} · ${esc(nombre(ganaSet))} ${Math.max(...m)}–${Math.min(...m)} · ${filas.length} rallies</div>`;
+        `Set ${st.numero} · ${esc(nombre(ganaSet))} ${Math.max(...m)}–${Math.min(...m)}, ${filas.length} rallies</div>`;
       if (abiertoSet) html += filas.map(({ r, i }) => filaAnterior(st, r, i, p)).join('');
     }
   });
@@ -2178,7 +2179,7 @@ function vistaSideout(d) {
 function vistaSaque(d) {
   const a = partesSaque(d, partido());
   return `<p class="stats-nota">Aces y errores de saque de cada equipo, y puntos de bloqueo del ${esc(nombre(partido().scouteado))}. ` +
-    `Se registran al cerrar con G (3 ace · 4 error de saque · 5 bloqueo); una recepción «=» cuenta como ace del que saca. ` +
+    `Se registran al cerrar con G (3 ace, 4 error de saque, 5 bloqueo); una recepción «=» cuenta como ace del que saca. ` +
     `La rotación es la del armador scouteado.</p>` +
     `<h3>Por set</h3>${a.porSet}<h3>Por rotación</h3>${a.porRot}`;
 }
@@ -2222,8 +2223,8 @@ function lineaPartido(x) {
     return `${m[i]}-${m[1 - i]}${st.final ? '' : '*'}`;
   });
   const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
-  return `<div><b>vs ${esc(nombre(otro(scout), x))}</b> · ${esc(fmtFecha(x.fecha))} · ` +
-    `<b>${g[i]}–${g[1 - i]}</b>${sets.length ? ' · ' + sets.join(' ') : ''} · ${rallies} rallies</div>`;
+  return `<div><b>vs ${esc(nombre(otro(scout), x))}</b>, ${esc(fmtFecha(x.fecha))}: ` +
+    `<b>${g[i]}–${g[1 - i]}</b>${sets.length ? ' (' + sets.join(' ') + ')' : ''}, ${rallies} rallies</div>`;
 }
 
 function htmlResumen(d, partidos) {
@@ -2241,7 +2242,7 @@ function htmlResumen(d, partidos) {
     `<header class="r-cab"><div class="r-marca">VoleyStats · Resumen de scouting</div>` +
     `<h1>${esc(scoutNom)}</h1>` +
     `<div class="r-partidos">${partidos.map(lineaPartido).join('')}</div>` +
-    `<div class="r-meta">Marcadores desde el punto de vista de ${esc(scoutNom)}${enCurso ? ' · * set sin terminar' : ''} · ` +
+    `<div class="r-meta">Marcadores desde el punto de vista de ${esc(scoutNom)}${enCurso ? ' (* set sin terminar)' : ''} · ` +
     `<b>${filtros.length ? 'Filtros: ' + esc(filtros.join(', ')) : 'Todas las jugadas'}</b></div></header>` +
     `<div class="r-kpis">` +
     kpi(txtPct(k.sideOut), 'Side-out', `${k.rallies} rallies recibiendo`) +
@@ -2258,7 +2259,7 @@ function htmlResumen(d, partidos) {
     `<div class="leyenda-fila">${['emergencia', 'segunda'].map((t) => `<span class="ley">${muestra(t)}${ARMADAS[t].nombre}</span>`).join('')}</div></section>` +
     `</div>` +
     `<div class="hoja salto">` +
-    `<section class="r-sec"><h2>Ataque por zona <span>${atq.n} ataques · dirección sobre remates · eficacia = (puntos − errores − bloqueos) / ataques con resultado</span></h2>` +
+    `<section class="r-sec"><h2>Ataque por zona <span>${atq.n} ataques; dirección sobre remates; eficacia = (puntos − errores − bloqueos) / ataques con resultado</span></h2>` +
     `${atq.tabla}<div class="r-cancha chica">${atq.cancha}</div>${leyendaResultados()}</section>` +
     `<section class="r-sec"><h2>Side-out <span>rallies en que ${esc(scoutNom)} recibe · 1er ataque = punto directo tras la recepción</span></h2>` +
     `<div class="r-2col"><div><h3>Por rotación</h3>${so.porRot}</div><div><h3>Por calidad de pase</h3>${so.porPase}</div></div></section>` +
@@ -2306,7 +2307,7 @@ function gruposSegmentados(d) {
   ];
 }
 
-// Texto corto de los filtros activos («P1 · Side-out · 2 más»)
+// Texto corto de los filtros activos («P1, Side-out, 2 filtros más»)
 function textoFiltrosActivos(d) {
   const partes = [];
   for (const g of gruposSegmentados(d)) {
@@ -2362,7 +2363,7 @@ function alternarMasFiltros(abrir = !stats.masFiltros) {
 function renderTira() {
   const incl = partidosIncluidos();
   const titulo = incl.length === 1
-    ? `${tituloPartido(incl[0])} · ${incl[0].sets.filter((st) => st.rallies.length).length} sets`
+    ? `${nombre('rival', incl[0])} vs ${nombre('propio', incl[0])}, ${fmtFecha(incl[0].fecha)}, ${incl[0].sets.filter((st) => st.rallies.length).length} sets`
     : `${incl.length} partidos sumados · ${nombre(partido().scouteado)}`;
   $('stats-tira').innerHTML =
     (ui.lateral ? '' : '<button class="btn-tenue fondo" id="btn-mostrar-video">▶ Mostrar video</button>') +
@@ -2444,7 +2445,7 @@ function contarPorZona(js) {
 function frasesEquipo(d, js, todas) {
   ui.listasVer = [];
   const ver = (lista, titulo) => { ui.listasVer.push({ lista, titulo }); return `<button data-ver="${ui.listasVer.length - 1}">ver jugadas</button>`; };
-  const chica = (n) => (n >= 5 && n <= 9 ? ' · muestra chica' : '');
+  const chica = (n) => (n >= 5 && n <= 9 ? ', muestra chica' : '');
   const rot = stats.filtros.rot.length === 1 ? `En P${stats.filtros.rot[0]} arma` : 'Arma';
   const frases = [];
   const n = js.length;
@@ -2469,7 +2470,7 @@ function frasesEquipo(d, js, todas) {
     const texto = dirs[1].c
       ? `Ataca más <b>${dirs[0].x} (${txtPct(pct(dirs[0].c, ataques.length))})</b> que ${dirs[1].x} (${txtPct(pct(dirs[1].c, ataques.length))}).`
       : `Ataca <b>${dirs[0].x} (${txtPct(100)})</b>.`;
-    frases.push({ texto, conteo: `${ataques.length} ataques · d. corta ${txtPct(pct(corta.c, ataques.length))}${chica(ataques.length)} · <button data-tab="ataque">ver Ataque</button>` });
+    frases.push({ texto, conteo: `${ataques.length} ataques, d. corta ${txtPct(pct(corta.c, ataques.length))}${chica(ataques.length)} · <button data-tab="ataque">ver Ataque</button>` });
   }
   const segundas = todas.filter((j) => j.armada === 'segunda');
   if (segundas.length) {
@@ -2492,7 +2493,7 @@ function vistaEquipo(d) {
     const lista = sinRot.filter((j) => j.rot === r);
     const z = contarPorZona(lista);
     const pie = lista.length
-      ? `<b>${z[0][0]} ${txtPct(pct(z[0][1], lista.length))}</b>${z[1] ? ` · ${z[1][0]} ${txtPct(pct(z[1][1], lista.length))}` : ''} · n=${lista.length}`
+      ? `<b>${z[0][0]} ${txtPct(pct(z[0][1], lista.length))}</b>${z[1] ? `, ${z[1][0]} ${txtPct(pct(z[1][1], lista.length))}` : ''}&ensp;n=${lista.length}`
       : 'sin armadas';
     return `<div class="ficha${rotSel === r ? ' sel' : ''}" data-ficha="${r}" title="Clic: filtrar P${r}"><span class="nombre">P${r}</span>` +
       (lista.length ? mediaCancha(lista, { ancho: 138, alto: 150, k: 0.09, etiquetas: 'mayor', armador: false }) : '<svg viewBox="-4 -11 104 113"></svg>') +
@@ -2689,7 +2690,7 @@ function renderLateral(d) {
     `<button class="btn-tenue chico" id="btn-esconder-video">✕ Esconder</button>`;
   renderLateralCtl();
   const filtros = textoFiltrosActivos(d);
-  $('clips-titulo').textContent = titulo || `${lista.length} jugadas${filtros.length ? ' · ' + filtros.join(' · ') : ''}`;
+  $('clips-titulo').textContent = titulo || `${lista.length} jugadas${filtros.length ? ': ' + filtros.join(', ') : ''}`;
   $('clips-cuenta').textContent = titulo ? `${lista.length}` : '';
   $('clips-lista').innerHTML = lista.length ? lista.map((c, i) => filaClip(c, tipo, i)).join('') : '<div class="vacio">No hay jugadas con estos filtros.</div>';
   renderAvisoStats();
@@ -2761,7 +2762,8 @@ function renderStats() {
   $('stats-tabs').innerHTML = Object.entries(VISTAS)
     .map(([k, v]) => `<button data-vistastats="${k}" class="${stats.vista === k ? 'activo' : ''}">${v}</button>`).join('');
   const [n, total, unidad] = unidadesVista(d);
-  $('stats-resumen').textContent = [nombre(p.scouteado), ...textoFiltrosActivos(d), `${n === total ? n : `${n} de ${total}`} ${unidad}`].join(' · ');
+  const filtrosTxt = textoFiltrosActivos(d);
+  $('stats-resumen').textContent = `${nombre(p.scouteado)}${filtrosTxt.length ? ', ' + filtrosTxt.join(', ') : ''} · ${n === total ? n : `${n} de ${total}`} ${unidad}`;
   const vistas = { equipo: vistaEquipo, ataque: vistaAtaqueV2, sideout: vistaSideoutRecepcion, saque: vistaSaque };
   const cont = $('stats-contenido');
   const scroll = cont.scrollTop;
@@ -3248,7 +3250,7 @@ function dialogoPlantel() {
 function resumenPartido(x) {
   const g = setsGanados(x);
   const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
-  return `Scouteando ${nombre(x.scouteado, x)} · sets ${g[0]}–${g[1]} · ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
+  return `Scouteando ${nombre(x.scouteado, x)}, sets ${g[0]}–${g[1]}, ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
 }
 
 function dialogoPartidos() {

@@ -280,5 +280,31 @@ modo foco, las 4 pestañas, filtros, «ver jugadas» y clips del lateral. Sin er
   jugadores). Corregido: la primera columna de las tablas se imprimía más grande que el resto.
 - `?v=21`.
 
+### Identidad visual «Transmisión» (2026-10-17)
+
+Reemplaza la dirección «Cabina». Solo estilos y tipografía; lógica, layout y flujos sin cambios.
+
+- Fuentes: Barlow Semi Condensed (`--sans`) e Barlow Condensed cursiva (`--display`) para marcador
+  (40 px), título de «Ahora» (36 px), marca (21 px), tiempo del video, KPIs y eficacia. Se eliminó
+  IBM Plex y `--mono`. `tabular-nums` en todo. Etiquetas en minúscula, 13 px, peso 600.
+- Paleta nueva en `:root` (fondo #1C1F27…). `--tv` #E1251B solo en: línea de 3 px bajo el header,
+  activos de selectores, filtros y rotación, y subrayado de 4 px de la pestaña activa. Un grupo de
+  filtros sin filtrar («Todo») marca su opción en gris, para que el rojo quede en lo filtrado.
+  `--error` pasó a rosado (#FF7A93) para no confundirse con el rojo TV.
+- Radios de 2 px. Paneles secundarios sin borde (separados por fondo).
+- «Ahora»: placa clara #F3F4F6 sin borde, tinta #14161C, teclas negras con letra blanca; muestras
+  de armada y notas con contorno oscuro; «=» y «-» con tonos legibles sobre blanco; ícono de mira oscuro.
+- Cancha: nombres de equipo sin mayúsculas ni espaciado.
+- Textos con más de dos datos encadenados con «·»: pasaron a comas o espacios
+  (historial, marcador del foco, resumen de estadísticas, fichas, títulos de clips, menú Partidos, PDF).
+- Contraste AA: el texto que usaba `--apagado` pasa a `--texto-3`; el texto de la nota «!» y de su
+  segmento en la barra de recepción pasó a negro (3,6 → 4,6).
+- Revisado con una auditoría automática de contraste AA y texto cortado a 1440×812 y 1280×720:
+  captura en todos los pasos, ayuda «?», lista abierta, modo foco (con y sin ayuda) y las 4
+  pestañas de estadísticas con video plegado y desplegado. Corregido de paso: a 1280 px, la
+  columna de resultado de la lista abierta y el pie de las fichas con video lateral se cortaban.
+- Resumen PDF: misma tipografía, sigue en 2 páginas A4.
+- `?v=23`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

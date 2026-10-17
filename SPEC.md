@@ -15,6 +15,16 @@ El sitio es una herramienta de scouting a nivel de equipo: muestra cómo juega u
 
 **Fuera de alcance por ahora:** versión para teléfono, sincronización entre dispositivos, cuentas de usuario.
 
+## Dirección visual
+
+**«Transmisión»:** se siente como el grafismo de una transmisión de vóley (marcador de TV, bloques sólidos, números condensados en cursiva), no como un dashboard genérico. La energía va en pocos lugares: marcador, panel «Ahora», marca y elementos activos; todo lo demás, sobrio.
+
+- **Tipografía:** Barlow Semi Condensed para toda la interfaz; Barlow Condensed (cursiva 700–800) solo para números y títulos de impacto: marcador, título de «Ahora», marca, tiempo del video, KPIs y eficacia. Números tabulares. Etiquetas en minúscula normal, sin mayúsculas espaciadas.
+- **Color:** fondo grafito azulado. El rojo de transmisión (#E1251B) aparece solo en la línea bajo el header, en lo activo o filtrado (selectores, filtros, rotación) y en el subrayado de la pestaña activa. Los errores usan un rosado distinto. Los colores de armada y de calificación mantienen su significado fijo.
+- **Formas:** radios de 2 px; un solo nivel de contenedor, separado por fondo y no por bordes. El panel «Ahora» es una placa clara sólida con teclas negras, como la gráfica de TV.
+- **Contraste:** textos con contraste AA, incluido el panel «Ahora».
+- **Resumen PDF:** tema claro con la misma tipografía.
+
 ## Arquitectura
 
 Se usa el mismo enfoque que funcionó en GOAT: un sitio estático sin servidor, donde lo que está en el repo es lo que corre.
@@ -183,7 +193,7 @@ Primero se valida el flujo de captura con un video real, porque si anotar es inc
 
 ## Preguntas abiertas
 
-- [ ] Nombre del sitio e identidad visual.
+- [ ] Nombre del sitio (la identidad visual quedó definida: dirección «Transmisión»).
 - [ ] Asignación exacta de teclas (se define con el prototipo).
 - [ ] Umbral de ángulo entre diago, diago corta y calle.
 - [x] ¿El saque se califica siempre o solo cuando interesa? → No se califica. Se registran ace y error de saque al cerrar el rally (G → 3 / 4).
