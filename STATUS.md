@@ -306,5 +306,31 @@ Reemplaza la dirección «Cabina». Solo estilos y tipografía; lógica, layout 
 - Resumen PDF: misma tipografía, sigue en 2 páginas A4.
 - `?v=23`.
 
+### Partidos organizados por equipo (2026-10-19)
+
+- Formato de datos v2 (`VERSION_DATOS = 2`): `almacen.equipos = { id: { id, nombre, alias, plantel } }`;
+  cada partido guarda `equipoIds: { propio, rival }` (lados A y B), `competencia` y una copia de nombres y plantel.
+  `nombre(lado, p)` resuelve desde el equipo; la interfaz nunca muestra «Propio»/«Rival» (sin nombre: «Equipo A/B»).
+- Migración v1 → v2 en `migrar()` / `asociarEquipos()`: crea equipos por slug y alias, une planteles de los
+  partidos al del equipo y pasa los planteles recordados (`voleystats:equipos`, que se borra) al equipo.
+  Antes de migrar guarda una copia exacta en `voleystats:respaldo-v1`.
+- El plantel del equipo es la referencia (`jugadoresDe`); editarlo desde un partido actualiza el del equipo.
+  Nota: Ctrl+Z deshace la copia del partido, no el plantel del equipo.
+- Pantalla de inicio «Equipos» (selector Equipos | Captura | Estadísticas): lista de equipos scouteados (y «solo
+  como rival»), detalle con partidos (fecha, rival, competencia, resultado por sets, estado calculado), plantel y
+  acciones: Analizar, Partido nuevo, Exportar paquete, Renombrar / alias, Juntar con…, Eliminar equipo
+  (no se puede si aparece como rival en partidos de otros). Indicador de espacio de localStorage con aviso desde 70 %.
+  Al recargar se vuelve a la pantalla en que se estaba (`prefs.modo`).
+- Partido nuevo: equipos A y B con autocompletar (nombres y alias), cuál se scoutea, fecha, competencia
+  (autocompleta las usadas). Datos del partido: fecha y competencia.
+- Estadísticas: el alcance es un equipo (`stats.equipoId`); sus partidos como chips, todos activos por defecto;
+  la selección se recuerda por equipo (`prefs.seleccion`, lista de partidos quitados). Reemplaza «Elegir partidos…».
+- Archivos: `voleystats-partido` v2 (con sus equipos), `voleystats-paquete`, `voleystats-respaldo`. Importar acepta
+  varios archivos y los tres formatos más partidos v1 sueltos; equipos por id, nombre o alias; conflictos con
+  Reemplazar / Guardar como copia / Omitir y «aplicar a todos».
+- Probado: v1 con «Católica» y «U. Católica» → migración, juntar (queda alias), stats 92 + 91 = 183, paquete,
+  eliminar equipo, importar paquete + JSON v1 suelto (se asocia por alias), 90 + 91 + 92 = 273, conflicto con Omitir.
+- `?v=24`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

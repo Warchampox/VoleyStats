@@ -7,12 +7,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,600;1,700;1,800&family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="estilos.css?v=23">
+  <link rel="stylesheet" href="estilos.css?v=24">
 </head>
 <body>
   <header class="cabecera">
     <div class="marca">VoleyStats</div>
     <div class="selector modo" id="selector-modo">
+      <button data-modo="equipos">Equipos</button>
       <button data-modo="captura" class="activo">Captura</button>
       <button data-modo="stats">Estadísticas</button>
     </div>
@@ -27,16 +28,17 @@
     <div class="menu-ancla">
       <button class="btn-icono" id="btn-menu" title="Más opciones" aria-haspopup="true">⋯</button>
       <div class="menu" id="menu-header" hidden>
-        <button id="btn-partidos">Partidos…</button>
+        <button id="btn-partidos">Equipos</button>
         <button id="btn-datos">Datos del partido…</button>
         <button id="btn-plantel">Plantel…</button>
         <button id="btn-cambiar-video">Cambiar video…</button>
         <hr>
-        <button id="btn-importar">Importar JSON…</button>
-        <button id="btn-exportar">Exportar JSON</button>
+        <button id="btn-importar">Importar…</button>
+        <button id="btn-exportar">Exportar partido</button>
+        <button id="btn-respaldo">Respaldo completo</button>
       </div>
     </div>
-    <input type="file" id="input-importar" accept=".json,application/json" hidden>
+    <input type="file" id="input-importar" accept=".json,application/json" multiple hidden>
   </header>
 
   <button class="btn-tenue salir-foco" id="btn-salir-foco" title="Salir del foco (O)">
@@ -188,11 +190,17 @@
     </div>
   </main>
 
+  <!-- Pantalla de inicio: equipos scouteados, sus partidos y su plantel -->
+  <main class="pantalla-equipos" id="pantalla-equipos">
+    <section class="eq-lista" id="eq-lista"></section>
+    <section class="eq-detalle" id="eq-detalle"></section>
+  </main>
+
   <div class="modal" id="modal" hidden></div>
 
   <!-- Resumen para imprimir / guardar como PDF: solo se ve con @media print -->
   <div class="resumen" id="resumen"></div>
 
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>

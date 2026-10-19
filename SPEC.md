@@ -8,7 +8,7 @@ El sitio es una herramienta de scouting a nivel de equipo: muestra cómo juega u
 
 - **Quién anota:** una sola persona, en un notebook, con calma y el video en la misma pantalla.
 - **Qué equipo:** se elige por partido. Lo habitual será solo el rival; existe la opción de scoutear ambos equipos.
-- **Cómo se comparte:** cada persona hace su propia revisión y la comparte como archivo. Sin cuentas ni sincronización.
+- **Cómo se comparte:** cada persona hace su propia revisión y la comparte como archivo (un partido o el paquete de un equipo). Sin cuentas ni sincronización.
 - **Foco:** estadísticas de equipo. Las individuales por jugador son un extra, no el objetivo.
 - **Tono:** herramienta seria para compartir información. Sin componentes de juego.
 - **Proyecto separado de GOAT**, con identidad visual propia.
@@ -32,7 +32,7 @@ Se usa el mismo enfoque que funcionó en GOAT: un sitio estático sin servidor, 
 - **Stack:** HTML/CSS/JS plano, sin framework ni build.
 - **Librerías por CDN:** las que hagan falta (por ejemplo, gráficos). Nunca npm ni bundler.
 - **Persistencia:** localStorage en el navegador del notebook. Si los partidos detallados crecen mucho, se evalúa IndexedDB.
-- **Compartir:** exportar e importar un archivo JSON por partido. Opcional: exportar a CSV para quien quiera abrirlo en Excel.
+- **Compartir:** exportar un partido, el paquete de un equipo (el equipo, su plantel y todos sus partidos) o un respaldo completo. Importar acepta varios archivos a la vez y los tres formatos, también los partidos sueltos de versiones anteriores. Opcional: exportar a CSV para quien quiera abrirlo en Excel.
 - **Deploy:** GitHub Pages directo desde el repo. Es necesario servir por http(s), porque el reproductor de YouTube no funciona abriendo el HTML como archivo local.
 - **Sincronización:** no hace falta. Se reevalúa solo si el uso real lo pide.
 - **Repo:** con CLAUDE.md (reglas fijas) y STATUS.md (avance por sesión), igual que GOAT.
@@ -130,14 +130,19 @@ Las teclas exactas se definen probando el prototipo, no en papel.
 
 ## Modelo de datos
 
-Un partido contiene sets, cada set contiene rallies y cada rally contiene acciones. Cada acción guarda su segundo de video y coordenadas normalizadas de la cancha (0 a 1), para poder recalcular estadísticas y mapas después.
+Lo normal es scoutear a un equipo viendo varios de sus partidos contra terceros, así que los datos se organizan **por equipo**. Un partido contiene sets, cada set contiene rallies y cada rally contiene acciones. Cada acción guarda su segundo de video y coordenadas normalizadas de la cancha (0 a 1), para poder recalcular estadísticas y mapas después.
 
-- **Partido:** equipos, fecha, fuente de video (link de YouTube o nombre del archivo local), equipo o equipos scouteados, plantel por equipo.
+- **Equipo:** nombre, alias (otros nombres con que aparece, por ejemplo «U. Católica» para «Católica») y plantel (número, nombre y posición opcionales). Es la referencia del plantel en todos sus partidos. Se puede renombrar, agregar alias y juntar con otro equipo guardado con otro nombre (se mueven sus partidos y se unen los planteles por número).
+- **Partido:** los ids de sus dos equipos (lado A y lado B) y cuál se scoutea, fecha, competencia opcional, fuente de video (link de YouTube o nombre del archivo local) y una copia del plantel de cada equipo. La interfaz siempre muestra los nombres de los equipos. El estado («Completo», «En curso», «Sin empezar») se calcula.
 - **Set:** número, rotación inicial de cada equipo, marcador final.
 - **Rally:** equipo que saca, marcador antes del rally, ganador, segundo de video de inicio y, si se cerró con motivo, `motivo` (ace, error de saque, bloqueo). La rotación del armador se deriva (rotación inicial del set, side-outs y correcciones).
 - **Acción:** tipo (saque, recepción, defensa, armada, ataque, pasa libre, recibe libre; datos viejos pueden traer recovery), equipo, jugador opcional (recepción, defensa, ataque), calificación (recepción y defensa), posición del pase opcional (`punto` en recepción y defensa), tipo de armada, `zaguero` si se marcó con la tecla, coordenadas, tipo de golpe, resultado, segundo de video.
 
-La fase de cada armada (recepción, contra, cobertura, libre) no se guarda: se deduce de las acciones anteriores. Los campos nuevos son opcionales, así que los partidos y archivos viejos se leen sin migración y se reclasifican solos.
+La fase de cada armada (recepción, contra, cobertura, libre) no se guarda: se deduce de las acciones anteriores.
+
+**Versiones del formato:** la versión 2 agregó los equipos como entidad. Al abrir datos de la versión 1, la app guarda primero una copia exacta, crea los equipos desde los nombres de los partidos (agrupando los nombres iguales sin importar mayúsculas ni tildes) y pasa a cada equipo los planteles que tenía recordados. Los archivos viejos se importan igual y se asocian a un equipo existente por nombre o alias.
+
+**Archivos:** `voleystats-partido` (un partido y sus dos equipos), `voleystats-paquete` (un equipo, su plantel y todos sus partidos) y `voleystats-respaldo` (todo lo guardado). Si al importar un partido ya existe, se elige Reemplazar, Guardar como copia u Omitir, con opción de aplicar a todos.
 
 Ejemplo de un rally:
 

@@ -172,18 +172,79 @@ const POSICIONES = {
 
 // Acciones a las que se les puede asignar jugador
 const ACCIONES_CON_JUGADOR = ['recepcion', 'defensa', 'ataque'];
-const VERSION_DATOS = 1;
+// v2: los equipos son una entidad propia (almacen.equipos) y cada partido
+// referencia los ids de sus dos equipos. Internamente cada partido sigue con
+// dos lados, 'propio' (A) y 'rival' (B); la interfaz siempre muestra nombres.
+const VERSION_DATOS = 2;
+const CLAVE_RESPALDO_V1 = 'voleystats:respaldo-v1';
 
-let almacen = { version: VERSION_DATOS, actual: null, partidos: {} };
+let almacen = { version: VERSION_DATOS, actual: null, partidos: {}, equipos: {} };
 let prefs = { pausarAlMarcar: true, velocidad: 1, leyenda: false, silencio: false };
 
-// Cada cambio futuro al formato agrega en migrarPartido un paso
-// (version N → N+1). Se usa al cargar localStorage y al importar archivos.
+const LADOS = ['propio', 'rival'];
+
+function nuevoId(prefijo) { return prefijo + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+// Busca un equipo por nombre o alias (sin mayúsculas ni tildes)
+function buscarEquipo(texto, equipos = almacen.equipos) {
+  const s = slug(texto || '');
+  if (!s) return null;
+  return Object.values(equipos).find((e) => slug(e.nombre) === s || (e.alias || []).some((a) => slug(a) === s)) || null;
+}
+
+function crearEquipo(nombreEquipo, equipos = almacen.equipos) {
+  const e = { id: nuevoId('e'), nombre: nombreEquipo.trim(), alias: [], plantel: [] };
+  equipos[e.id] = e;
+  return e;
+}
+
+function equipoPorNombre(texto, equipos = almacen.equipos) {
+  return buscarEquipo(texto, equipos) || crearEquipo(texto, equipos);
+}
+
+// Une planteles por número: lo que ya tiene el destino manda; completa nombre y posición
+function unirPlantel(destino, origen) {
+  for (const j of origen || []) {
+    if (j.num == null || j.num === '') continue;
+    const num = Number(j.num);
+    const ya = destino.find((x) => x.num === num);
+    if (!ya) destino.push({ ...j, num });
+    else {
+      if (!ya.nombre && j.nombre) ya.nombre = j.nombre;
+      if (!ya.pos && j.pos) ya.pos = j.pos;
+    }
+  }
+  destino.sort((a, b) => a.num - b.num);
+  return destino;
+}
+
+// Asocia un partido a sus equipos (creándolos si no existen) y une su plantel al del equipo
+function asociarEquipos(p, equipos = almacen.equipos) {
+  p.equipoIds = p.equipoIds || {};
+  p.equipos = p.equipos || {};
+  for (const lado of LADOS) {
+    let eq = p.equipoIds[lado] && equipos[p.equipoIds[lado]];
+    if (!eq) eq = equipoPorNombre(p.equipos[lado] || (lado === 'propio' ? 'Equipo A' : 'Equipo B'), equipos);
+    p.equipoIds[lado] = eq.id;
+    p.equipos[lado] = eq.nombre;
+    unirPlantel(eq.plantel, p.plantel && p.plantel[lado]);
+  }
+  return p;
+}
+
+// Cada cambio al formato agrega aquí su paso. Se usa al cargar localStorage y al importar.
 function migrar(datos) {
   if (!datos || typeof datos !== 'object' || !datos.partidos) {
-    return { version: VERSION_DATOS, actual: null, partidos: {} };
+    return { version: VERSION_DATOS, actual: null, partidos: {}, equipos: {} };
   }
-  for (const id of Object.keys(datos.partidos)) datos.partidos[id] = migrarPartido(datos.partidos[id]);
+  if (!datos.equipos || typeof datos.equipos !== 'object') datos.equipos = {};
+  for (const e of Object.values(datos.equipos)) {
+    e.alias = Array.isArray(e.alias) ? e.alias : [];
+    e.plantel = Array.isArray(e.plantel) ? e.plantel : [];
+  }
+  for (const id of Object.keys(datos.partidos)) {
+    datos.partidos[id] = asociarEquipos(migrarPartido(datos.partidos[id]), datos.equipos);
+  }
   datos.version = VERSION_DATOS;
   return datos;
 }
@@ -196,19 +257,47 @@ function migrarPartido(p) {
     if (!st.rotInicial) st.rotInicial = { propio: null, rival: null };
     if (!Array.isArray(st.correcciones)) st.correcciones = [];
   }
-  // if (p.version === 1) { ...; p.version = 2; }
+  // v1 → v2: los ids de equipo los pone asociarEquipos()
+  if (p.version < 2) p.version = 2;
   return p;
 }
 
 function cargarAlmacen() {
   try {
     const crudo = localStorage.getItem(CLAVE);
-    if (crudo) almacen = migrar(JSON.parse(crudo));
+    if (crudo) {
+      const datos = JSON.parse(crudo);
+      const eraV1 = (datos.version || 1) < 2;
+      // Antes de migrar, una copia exacta de los datos de la versión anterior
+      if (eraV1 && !localStorage.getItem(CLAVE_RESPALDO_V1)) {
+        try { localStorage.setItem(CLAVE_RESPALDO_V1, crudo); } catch (e) { /* sin espacio: se migra igual */ }
+      }
+      almacen = migrar(datos);
+      if (eraV1) {
+        migrarPlantelesConocidos();
+        guardarSinAviso();
+      }
+    }
   } catch (e) { /* sin datos previos legibles */ }
   try {
     const p = localStorage.getItem(CLAVE_PREFS);
     if (p) prefs = { ...prefs, ...JSON.parse(p) };
   } catch (e) { /* preferencias por defecto */ }
+}
+
+// Los planteles recordados por nombre (clave vieja) pasan al plantel de cada equipo
+function migrarPlantelesConocidos() {
+  let conocidos = {};
+  try { conocidos = JSON.parse(localStorage.getItem(CLAVE_EQUIPOS)) || {}; } catch (e) { conocidos = {}; }
+  for (const c of Object.values(conocidos)) {
+    if (!c || !c.nombre || !Array.isArray(c.jugadores)) continue;
+    unirPlantel(equipoPorNombre(c.nombre).plantel, c.jugadores);
+  }
+  try { localStorage.removeItem(CLAVE_EQUIPOS); } catch (e) { /* no crítico */ }
+}
+
+function guardarSinAviso() {
+  try { localStorage.setItem(CLAVE, JSON.stringify(almacen)); } catch (e) { /* se reintenta al guardar */ }
 }
 
 function guardar() {
@@ -228,17 +317,21 @@ function guardarPrefs() {
 
 function partido() { return almacen.partidos[almacen.actual] || null; }
 
-function crearPartido({ propio, rival, fecha, scouteado }) {
-  const id = 'p' + Date.now().toString(36);
+// Lado A ('propio') y lado B ('rival'): nombres de equipo; si no existen, se crean
+function crearPartido({ equipoA, equipoB, fecha, scouteado, competencia }) {
+  const a = equipoPorNombre(equipoA), b = equipoPorNombre(equipoB);
   return {
-    id,
+    id: nuevoId('p'),
     version: VERSION_DATOS,
     creado: new Date().toISOString(),
     fecha,
-    equipos: { propio, rival },
+    competencia: competencia || '',
+    equipoIds: { propio: a.id, rival: b.id },
+    equipos: { propio: a.nombre, rival: b.nombre }, // copia legible de los nombres
     scouteado,
     video: null,
-    plantel: { propio: [], rival: [] }, // [{ num, nombre, pos }]
+    // copia del plantel de cada equipo (la referencia es el plantel del equipo)
+    plantel: { propio: a.plantel.map((j) => ({ ...j })), rival: b.plantel.map((j) => ({ ...j })) },
     sets: [crearSet(1)],
   };
 }
@@ -254,8 +347,13 @@ function crearSet(numero) {
   };
 }
 
-function nombre(equipo, p = partido()) {
-  return (p && p.equipos[equipo]) || (equipo === 'propio' ? 'Propio' : 'Rival');
+function equipoDe(lado, p = partido()) {
+  return (p && p.equipoIds && almacen.equipos[p.equipoIds[lado]]) || null;
+}
+
+function nombre(lado, p = partido()) {
+  const eq = equipoDe(lado, p);
+  return eq ? eq.nombre : (p && p.equipos && p.equipos[lado]) || (lado === 'propio' ? 'Equipo A' : 'Equipo B');
 }
 
 function setActual(p = partido()) { return p.sets[p.sets.length - 1]; }
@@ -783,7 +881,7 @@ function cerrarRally(set, r, gana, motivo = null) {
 
 // Si la tecla es de captura pero no corresponde al paso actual, se avisa en el panel
 function teclaCaptura(k) {
-  if (ui.modo === 'stats' || !partido()) return false;
+  if (ui.modo !== 'captura' || !partido()) return false;
   if (teclaCapturaPaso(k)) return true;
   if (TECLAS_CAPTURA.has(k)) {
     avisar(`Esa tecla no aplica ahora (${nombreTecla(k)}): estás en «${contenidoEstado(estado()).titulo}».`);
@@ -1019,10 +1117,12 @@ function render() {
   renderControles();
   renderJugadores();
   if (ui.modo === 'stats') renderStats();
+  if (ui.modo === 'equipos') renderEquipos();
 }
 
+// Primero el equipo scouteado
 function tituloPartido(x = partido()) {
-  return x ? `${nombre('rival', x)} vs ${nombre('propio', x)} · ${fmtFecha(x.fecha)}` : 'Sin partido';
+  return x ? `${nombre(x.scouteado, x)} vs ${nombre(otro(x.scouteado), x)} · ${fmtFecha(x.fecha)}` : 'Sin partido';
 }
 
 function renderCabecera() {
@@ -1261,8 +1361,11 @@ function contenidoEstado(e) {
 
 // ---------- Plantel: fila de jugadores ----------
 
-function jugadoresDe(equipo, p = partido()) {
-  return ((p && p.plantel && p.plantel[equipo]) || []).slice().sort((a, b) => a.num - b.num);
+// El plantel de referencia es el del equipo; la copia del partido es el respaldo
+function jugadoresDe(lado, p = partido()) {
+  const eq = equipoDe(lado, p);
+  const lista = eq ? eq.plantel : (p && p.plantel && p.plantel[lado]) || [];
+  return lista.slice().sort((a, b) => a.num - b.num);
 }
 
 function textoJugador(num, p = partido()) {
@@ -1396,7 +1499,8 @@ function simboloMini(res) {
 
 // ---------- Cancha ----------
 
-function baseCancha(p) {
+// otroTexto: nombre del contrario a mostrar (p. ej. «rivales» si se suman varios partidos)
+function baseCancha(p, otroTexto = null) {
   const L = 'var(--linea-cancha)';
   let s = '';
   s += `<rect x="20" y="20" width="180" height="90" fill="var(--superficie-cancha)" stroke="${L}" stroke-width="0.7"/>`;
@@ -1413,8 +1517,8 @@ function baseCancha(p) {
   s += `<line x1="110" y1="14" x2="110" y2="116" stroke="var(--texto)" stroke-width="1.1"/>`;
   s += `<circle cx="110" cy="14" r="1.1" fill="var(--texto)"/><circle cx="110" cy="116" r="1.1" fill="var(--texto)"/>`;
   if (p) {
-    s += `<text x="20" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)">${esc(nombre(p.scouteado))} ataca →</text>`;
-    s += `<text x="200" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)" text-anchor="end">${esc(nombre(otro(p.scouteado)))}</text>`;
+    s += `<text x="20" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)">${esc(nombre(p.scouteado, p))} ataca →</text>`;
+    s += `<text x="200" y="11" font-size="5.4" font-weight="600" fill="var(--texto-3)" text-anchor="end">${esc(otroTexto || nombre(otro(p.scouteado), p))}</text>`;
   }
   return s;
 }
@@ -1846,23 +1950,40 @@ const DIMS_DATOS = {
 };
 const DATOS_VISTA = { equipo: 'jugadas', ataque: 'jugadas', sideout: 'rallies', saque: 'todos' };
 
-function equipoScout(p) { return slug(nombre(p.scouteado, p)); }
-
-function partidosCompatibles() {
+// Alcance de las estadísticas: un EQUIPO y los partidos en que se lo scoutea.
+// La selección se recuerda por equipo como lista de partidos quitados (los nuevos entran solos).
+function equipoStats() {
+  if (stats.equipoId && almacen.equipos[stats.equipoId]) return almacen.equipos[stats.equipoId];
   const p = partido();
-  if (!p) return [];
-  const eq = equipoScout(p);
-  return Object.values(almacen.partidos)
-    .filter((x) => equipoScout(x) === eq)
-    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  const eq = p && equipoDe(p.scouteado, p);
+  if (eq) { stats.equipoId = eq.id; return eq; }
+  return null;
+}
+
+function partidosQuitados(eid) { return (prefs.seleccion && prefs.seleccion[eid]) || []; }
+
+function alternarPartidoStats(pid) {
+  const eq = equipoStats();
+  if (!eq) return;
+  prefs.seleccion = prefs.seleccion || {};
+  const quitados = new Set(partidosQuitados(eq.id));
+  if (quitados.has(pid)) quitados.delete(pid); else quitados.add(pid);
+  prefs.seleccion[eq.id] = [...quitados];
+  guardarPrefs();
+  ui.clipsOverride = null;
+  renderStats();
 }
 
 function partidosIncluidos() {
-  const p = partido();
-  if (!p) return [];
-  if (!stats.partidos) return [p];
-  const lista = partidosCompatibles().filter((x) => stats.partidos.has(x.id));
-  return lista.length ? lista : [p];
+  const eq = equipoStats();
+  if (!eq) return [];
+  const quitados = partidosQuitados(eq.id);
+  return partidosDelEquipo(eq.id).filter((x) => !quitados.includes(x.id));
+}
+
+// Partido de referencia para nombres en las vistas (todos comparten el equipo scouteado)
+function partidoRef() {
+  return partidosIncluidos()[0] || partidosDelEquipo((equipoStats() || {}).id)[0] || partido();
 }
 
 function recolectar(partidos) {
@@ -2009,7 +2130,8 @@ function tablaZonas(filas, titulo) {
 }
 
 function canchaMini(contenido, p) {
-  return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p)}${contenido}</svg>`;
+  const otroTexto = partidosIncluidos().length > 1 ? 'rivales' : null;
+  return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p, otroTexto)}${contenido}</svg>`;
 }
 
 function partesArmador(d, p) {
@@ -2157,7 +2279,8 @@ function partesSaque(d, p) {
       cols.map((c, i) => `<td class="num${i === 3 ? ' sep' : ''}">${n(c) || '·'}</td>`).join('') +
       `<td class="num tenue">${lista.filter((r) => !r.sacaScout).length}</td></tr>`;
   };
-  const scoutNom = esc(nombre(p.scouteado)), otroNom = esc(nombre(otro(p.scouteado)));
+  const scoutNom = esc(nombre(p.scouteado, p));
+  const otroNom = esc(partidosIncluidos().length > 1 ? 'Rivales' : nombre(otro(p.scouteado), p));
   const cab = (t) => `<tr><th></th><th colspan="4" class="grupo-col">${scoutNom}</th><th colspan="3" class="grupo-col sep">${otroNom}</th></tr>` +
     `<tr><th>${t}</th><th>Saques</th><th>Aces</th><th>Err. saque</th><th>Bloqueos</th><th class="sep">Aces</th><th>Err. saque</th><th>Saques</th></tr>`;
   const sets = [...new Set(rs.map((r) => r.set))].sort((a, b) => a - b);
@@ -2171,14 +2294,14 @@ function partesSaque(d, p) {
 
 function vistaSideout(d) {
   const a = partesSideout(d);
-  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partido().scouteado))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
+  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partidoRef().scouteado, partidoRef()))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
     `<h3>Por rotación</h3>${a.porRot}` +
     `<h3>Por calidad de pase</h3>${a.porPase}`;
 }
 
 function vistaSaque(d) {
-  const a = partesSaque(d, partido());
-  return `<p class="stats-nota">Aces y errores de saque de cada equipo, y puntos de bloqueo del ${esc(nombre(partido().scouteado))}. ` +
+  const a = partesSaque(d, partidoRef());
+  return `<p class="stats-nota">Aces y errores de saque de cada equipo, y puntos de bloqueo del ${esc(nombre(partidoRef().scouteado, partidoRef()))}. ` +
     `Se registran al cerrar con G (3 ace, 4 error de saque, 5 bloqueo); una recepción «=» cuenta como ace del que saca. ` +
     `La rotación es la del armador scouteado.</p>` +
     `<h3>Por set</h3>${a.porSet}<h3>Por rotación</h3>${a.porRot}`;
@@ -2228,8 +2351,8 @@ function lineaPartido(x) {
 }
 
 function htmlResumen(d, partidos) {
-  const p = partido();
-  const scoutNom = nombre(p.scouteado);
+  const p = partidoRef();
+  const scoutNom = nombre(p.scouteado, p);
   const k = indicadores(d);
   const filtros = Object.entries(stats.filtros).flatMap(([dim, vals]) => vals.map((v) => textoFiltro(dim, v)));
   const arm = partesArmador(d, p);
@@ -2271,15 +2394,15 @@ function htmlResumen(d, partidos) {
 }
 
 function imprimirResumen() {
-  const p = partido();
-  if (!p) return;
+  const p = partidoRef();
+  if (!p || !equipoStats()) return;
   const partidos = partidosIncluidos();
   const d = recolectar(partidos);
   $('resumen').innerHTML = htmlResumen(d, partidos);
   const fechas = partidos.map((x) => x.fecha).filter(Boolean).sort();
   const fecha = !fechas.length ? hoyIso() : fechas[0] === fechas[fechas.length - 1] ? fechas[0] : `${fechas[0]} a ${fechas[fechas.length - 1]}`;
   const titulo = document.title;
-  document.title = `VoleyStats - ${nombre(p.scouteado)} - ${fecha}`;
+  document.title = `VoleyStats - ${nombre(p.scouteado, p)} - ${fecha}`;
   const restaurar = () => { document.title = titulo; window.removeEventListener('afterprint', restaurar); };
   window.addEventListener('afterprint', restaurar);
   window.print();
@@ -2361,14 +2484,16 @@ function alternarMasFiltros(abrir = !stats.masFiltros) {
 // ---------- Tira del video plegado y alcance ----------
 
 function renderTira() {
-  const incl = partidosIncluidos();
-  const titulo = incl.length === 1
-    ? `${nombre('rival', incl[0])} vs ${nombre('propio', incl[0])}, ${fmtFecha(incl[0].fecha)}, ${incl[0].sets.filter((st) => st.rallies.length).length} sets`
-    : `${incl.length} partidos sumados · ${nombre(partido().scouteado)}`;
+  const eq = equipoStats();
+  const todos = eq ? partidosDelEquipo(eq.id) : [];
+  const quitados = eq ? partidosQuitados(eq.id) : [];
+  const chips = todos.slice().reverse().map((x) =>
+    `<button class="chip-partido${quitados.includes(x.id) ? '' : ' activo'}" data-partido-stats="${x.id}" title="${esc(`${fmtFecha(x.fecha)} vs ${rivalDe(x)}${x.competencia ? ', ' + x.competencia : ''}`)}">` +
+    `${esc(fmtFecha(x.fecha).replace(/ \d{4}$/, ''))} <b>${esc(rivalDe(x))}</b></button>`).join('');
   $('stats-tira').innerHTML =
     (ui.lateral ? '' : '<button class="btn-tenue fondo" id="btn-mostrar-video">▶ Mostrar video</button>') +
-    `<span class="titulo">${esc(titulo)}</span>` +
-    `<button class="btn-tenue derecha" id="elegir-partidos">Elegir partidos…</button>`;
+    `<span class="titulo-equipo">${esc(eq ? eq.nombre : 'Sin equipo')}</span>` +
+    `<div class="chips-partidos">${chips}</div>`;
 }
 
 // ---------- Pestaña Equipo ----------
@@ -2484,7 +2609,6 @@ function frasesEquipo(d, js, todas) {
 }
 
 function vistaEquipo(d) {
-  const p = partido();
   const todas = filtrar(d.jugadas, 'jugadas');
   const js = todas.filter((j) => !ARMADAS[j.armada].especial);
   const rotSel = stats.filtros.rot.length === 1 ? stats.filtros.rot[0] : null;
@@ -2516,7 +2640,7 @@ function plegable(clave, titulo, contenido, resumen = '') {
 }
 
 function vistaArmadorTablas(d) {
-  const a = partesArmador(d, partido());
+  const a = partesArmador(d, partidoRef());
   return `<p class="stats-nota">${a.n} armadas del armador (sin emergencia ni segunda). Porcentaje de cada fila según zona de ataque. Clic en una celda filtra las jugadas.</p>` +
     `<div class="dos-col"><div><h3>Por rotación</h3>${a.porRot}</div>` +
     `<div><h3>Por calidad de pase (recepción y defensa)</h3>${a.porPase}${a.emergencias}` +
@@ -2626,7 +2750,7 @@ function vistaAtaqueV2(d) {
   const porJug = jugs.length
     ? tablaAtaque([...jugs, { etiqueta: 'Total', lista: js.filter((j) => j.jugador != null), filtro: {} }], 'Jugador')
     : '<p class="stats-nota">Asigna jugadores a los ataques (menú «Jugador» en la cancha) para ver esta tabla.</p>';
-  const impactos = partesAtaque(d, partido(), stats.mapa);
+  const impactos = partesAtaque(d, partidoRef(), stats.mapa);
   return `<div class="ataque-resumen"><div class="barra-dir">${barra}</div><div class="dir-textos">${textos}</div>` +
     `<div class="efic-total">Eficacia <b>${txtEficacia(r.ef)}</b></div></div>` +
     `<div class="bloque-titulo">Dirección por zona de origen<span>grosor = % · con menos de 15 jugadas se ven las trayectorias una a una</span></div>` +
@@ -2743,7 +2867,6 @@ function renderAvisoStats() {
 // ---------- Render de estadísticas ----------
 
 function unidadesVista(d) {
-  const p = partido();
   // Equipo: armadas del armador (sin emergencia ni segunda), igual que las frases y la distribución
   const normales = (l) => l.filter((j) => !ARMADAS[j.armada].especial);
   if (stats.vista === 'equipo') return [normales(filtrar(d.jugadas, 'jugadas')).length, normales(d.jugadas).length, 'armadas'];
@@ -2753,8 +2876,8 @@ function unidadesVista(d) {
 }
 
 function renderStats() {
-  const p = partido();
-  if (!p) return;
+  const p = partidoRef();
+  if (!p || !equipoStats()) return;
   document.body.classList.toggle('lateral', !!ui.lateral);
   const d = recolectar(partidosIncluidos());
   renderTira();
@@ -2763,7 +2886,7 @@ function renderStats() {
     .map(([k, v]) => `<button data-vistastats="${k}" class="${stats.vista === k ? 'activo' : ''}">${v}</button>`).join('');
   const [n, total, unidad] = unidadesVista(d);
   const filtrosTxt = textoFiltrosActivos(d);
-  $('stats-resumen').textContent = `${nombre(p.scouteado)}${filtrosTxt.length ? ', ' + filtrosTxt.join(', ') : ''} · ${n === total ? n : `${n} de ${total}`} ${unidad}`;
+  $('stats-resumen').textContent = `${nombre(p.scouteado, p)}${filtrosTxt.length ? ', ' + filtrosTxt.join(', ') : ''} · ${n === total ? n : `${n} de ${total}`} ${unidad}`;
   const vistas = { equipo: vistaEquipo, ataque: vistaAtaqueV2, sideout: vistaSideoutRecepcion, saque: vistaSaque };
   const cont = $('stats-contenido');
   const scroll = cont.scrollTop;
@@ -2788,31 +2911,16 @@ async function reproducirClip(pid, t) {
   Video.reproducir();
 }
 
-function dialogoElegirPartidos() {
-  const compat = partidosCompatibles();
-  const incl = new Set(partidosIncluidos().map((x) => x.id));
-  abrirModal(
-    `<h2>Partidos a sumar</h2><p>Partidos guardados en que se scoutea a ${esc(nombre(partido().scouteado))}.</p>` +
-    `<div class="partidos-lista">${compat.map((x) =>
-      `<label class="partido-fila check"><input type="checkbox" value="${x.id}" ${incl.has(x.id) ? 'checked' : ''}>` +
-      `<div class="partido-datos"><b>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))}</b>` +
-      `<span class="tenue">${esc(fmtFecha(x.fecha))} · ${esc(resumenPartido(x))}</span></div></label>`).join('')}</div>` +
-    `<div class="acciones"><button class="btn izq" id="ep-todos">Todos</button><button class="btn" id="ep-cancelar">Cancelar</button><button class="btn principal" id="ep-ok">Aplicar</button></div>`,
-    true,
-  );
-  $('ep-todos').addEventListener('click', () => $('modal').querySelectorAll('input[type=checkbox]').forEach((c) => { c.checked = true; }));
-  $('ep-cancelar').addEventListener('click', cerrarModal);
-  $('ep-ok').addEventListener('click', () => {
-    const ids = [...$('modal').querySelectorAll('input:checked')].map((c) => c.value);
-    stats.partidos = ids.length ? new Set(ids) : null;
-    cerrarModal();
-    renderStats();
-  });
-}
-
 function cambiarModo(modo) {
+  if (modo === 'captura' && !partido()) modo = 'equipos';
+  // Desde captura, las estadísticas muestran al equipo del partido abierto
+  if (modo === 'stats' && ui.modo === 'captura' && partido()) stats.equipoId = (equipoDe(partido().scouteado) || {}).id || stats.equipoId;
+  if (modo === 'stats' && !equipoStats()) modo = 'equipos';
   ui.modo = modo;
+  prefs.modo = modo;
+  guardarPrefs();
   document.body.classList.toggle('modo-stats', modo === 'stats');
+  document.body.classList.toggle('modo-equipos', modo === 'equipos');
   document.body.classList.toggle('lateral', modo === 'stats' && !!ui.lateral);
   $('selector-modo').querySelectorAll('button').forEach((b) => b.classList.toggle('activo', b.dataset.modo === modo));
   alternarAyuda(false);
@@ -2826,7 +2934,7 @@ function cambiarModo(modo) {
 function conectarStats() {
   $('selector-modo').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-modo]');
-    if (b && partido()) cambiarModo(b.dataset.modo);
+    if (b) cambiarModo(b.dataset.modo);
   });
   $('resumen-pdf').addEventListener('click', imprimirResumen);
   $('stats').addEventListener('click', (ev) => {
@@ -2881,7 +2989,8 @@ function conectarStats() {
     if (t.closest('#btn-mas-filtros')) { alternarMasFiltros(); return; }
     if (t.closest('#limpiar-filtros')) { for (const k of Object.keys(stats.filtros)) stats.filtros[k] = []; ui.clipsOverride = null; renderStats(); return; }
     if (t.closest('#btn-mostrar-video')) { abrirLateral(true); return; }
-    if (t.closest('#elegir-partidos')) dialogoElegirPartidos();
+    const chipP = t.closest('[data-partido-stats]');
+    if (chipP) alternarPartidoStats(chipP.dataset.partidoStats);
   });
   $('lateral-cab').addEventListener('click', (ev) => { if (ev.target.closest('#btn-esconder-video')) abrirLateral(false); });
   $('lateral-ctl').addEventListener('click', (ev) => {
@@ -2991,27 +3100,41 @@ function confirmar({ titulo, texto, aceptar = 'Aceptar', soloAceptar = false }) 
   });
 }
 
-function dialogoPartido({ nuevo, cancelable }) {
+// ---------- Partido nuevo y datos del partido ----------
+
+function nombresConocidos() {
+  return [...new Set(Object.values(almacen.equipos).flatMap((e) => [e.nombre, ...(e.alias || [])]))].sort((a, b) => a.localeCompare(b));
+}
+
+function competenciasUsadas() {
+  return [...new Set(Object.values(almacen.partidos).map((x) => (x.competencia || '').trim()).filter(Boolean))].sort();
+}
+
+// Partido nuevo: equipo A y B con autocompletar (si no existe se crea), cuál se scoutea,
+// fecha y competencia. Editar: fecha y competencia (los nombres se cambian en Equipos).
+function dialogoPartido({ nuevo, cancelable, equipoA = '' }) {
   const p = partido();
-  const datos = nuevo
-    ? { propio: 'Propio', rival: 'Rival', fecha: hoyIso(), scouteado: 'rival' }
-    : { propio: p.equipos.propio, rival: p.equipos.rival, fecha: p.fecha, scouteado: p.scouteado };
+  const lista = (id, valores) => `<datalist id="${id}">${valores.map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
+  const scout = nuevo ? 'propio' : p.scouteado;
   abrirModal(
     `<h2>${nuevo ? 'Partido nuevo' : 'Datos del partido'}</h2>` +
     `<form id="form-partido" style="display:flex;flex-direction:column;gap:14px">` +
+    lista('dl-equipos', nombresConocidos()) + lista('dl-competencias', competenciasUsadas()) +
     `<div class="fila-campos">` +
-    `<label><span class="etiqueta">Equipo propio</span><input class="campo" id="d-propio" value="${esc(datos.propio)}" required></label>` +
-    `<label><span class="etiqueta">Equipo rival</span><input class="campo" id="d-rival" value="${esc(datos.rival)}" required></label>` +
+    `<label><span class="etiqueta">Equipo A</span><input class="campo" id="d-a" list="dl-equipos" autocomplete="off" value="${esc(nuevo ? equipoA : nombre('propio'))}" ${nuevo ? 'required' : 'disabled'}></label>` +
+    `<label><span class="etiqueta">Equipo B</span><input class="campo" id="d-b" list="dl-equipos" autocomplete="off" value="${esc(nuevo ? '' : nombre('rival'))}" ${nuevo ? 'required' : 'disabled'}></label>` +
     `</div>` +
+    `<div class="opciones-scout"><span class="etiqueta">Se scoutea a</span>` +
+    `<label class="opcion"><input type="radio" name="d-scout" value="propio" ${scout === 'propio' ? 'checked' : ''} ${nuevo ? '' : 'disabled'}> <span id="d-scout-a">${esc(nuevo ? (equipoA || 'Equipo A') : nombre('propio'))}</span></label>` +
+    `<label class="opcion"><input type="radio" name="d-scout" value="rival" ${scout === 'rival' ? 'checked' : ''} ${nuevo ? '' : 'disabled'}> <span id="d-scout-b">${esc(nuevo ? 'Equipo B' : nombre('rival'))}</span></label></div>` +
     `<div class="fila-campos">` +
-    `<label><span class="etiqueta">Fecha</span><input class="campo" id="d-fecha" type="date" value="${esc(datos.fecha)}" required></label>` +
-    `<label><span class="etiqueta">Equipo scouteado</span>` +
-    (nuevo
-      ? `<select class="campo" id="d-scout"><option value="rival">Rival</option><option value="propio">Propio</option></select>`
-      : `<input class="campo" value="${esc(nombre(datos.scouteado))}" disabled>`) +
-    `</label></div>` +
+    `<label><span class="etiqueta">Fecha</span><input class="campo" id="d-fecha" type="date" value="${esc(nuevo ? hoyIso() : p.fecha)}" required></label>` +
+    `<label><span class="etiqueta">Competencia (opcional)</span><input class="campo" id="d-competencia" list="dl-competencias" autocomplete="off" value="${esc(nuevo ? '' : p.competencia || '')}"></label>` +
+    `</div>` +
+    (nuevo ? '' : `<p class="tenue">Los nombres de los equipos se cambian desde Equipos (Renombrar / alias).</p>`) +
+    `<div class="carga-error" id="d-error"></div>` +
     `<div class="acciones">` +
-    (nuevo ? `<button type="button" class="btn izq" id="d-importar-nuevo" title="Abrir un partido desde un archivo JSON exportado">Importar partido…</button>` : '') +
+    (nuevo ? `<button type="button" class="btn izq" id="d-importar-nuevo" title="Abrir partidos desde archivos exportados">Importar…</button>` : '') +
     (cancelable ? `<button type="button" class="btn" id="d-cancelar">Cancelar</button>` : '') +
     `<button type="submit" class="btn principal">${nuevo ? 'Crear partido' : 'Guardar'}</button>` +
     `</div></form>`,
@@ -3019,141 +3142,208 @@ function dialogoPartido({ nuevo, cancelable }) {
   );
 
   if (cancelable) $('d-cancelar').addEventListener('click', cerrarModal);
-  if (nuevo) $('d-importar-nuevo').addEventListener('click', () => $('input-importar').click());
+  if (nuevo) {
+    $('d-importar-nuevo').addEventListener('click', () => $('input-importar').click());
+    // Las opciones de «se scoutea a» muestran los nombres que se van escribiendo
+    const sync = () => {
+      $('d-scout-a').textContent = $('d-a').value.trim() || 'Equipo A';
+      $('d-scout-b').textContent = $('d-b').value.trim() || 'Equipo B';
+    };
+    $('d-a').addEventListener('input', sync);
+    $('d-b').addEventListener('input', sync);
+  }
 
   $('form-partido').addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const propio = $('d-propio').value.trim() || 'Propio';
-    const rival = $('d-rival').value.trim() || 'Rival';
     const fecha = $('d-fecha').value || hoyIso();
+    const competencia = $('d-competencia').value.trim();
     if (nuevo) {
-      const np = crearPartido({ propio, rival, fecha, scouteado: $('d-scout').value });
-      const cargados = cargarPlantelesConocidos(np);
+      const a = $('d-a').value.trim(), b = $('d-b').value.trim();
+      if (!a || !b) { $('d-error').textContent = 'Escribe los dos equipos.'; return; }
+      if (slug(a) === slug(b) || (buscarEquipo(a) && buscarEquipo(a) === buscarEquipo(b))) { $('d-error').textContent = 'Los dos equipos no pueden ser el mismo.'; return; }
+      const scouteado = $('modal').querySelector('input[name="d-scout"]:checked').value;
+      const np = crearPartido({ equipoA: a, equipoB: b, fecha, scouteado, competencia });
       almacen.partidos[np.id] = np;
+      cerrarModal();
       cambiarPartido(np.id);
-      if (cargados.length) avisar(`Plantel cargado: ${cargados.join(', ')}`);
+      cambiarModo('captura');
+      const conPlantel = LADOS.filter((l) => np.plantel[l].length).map((l) => `${nombre(l, np)} (${np.plantel[l].length})`);
+      if (conPlantel.length) avisar(`Plantel cargado: ${conPlantel.join(', ')}`);
     } else {
-      p.equipos.propio = propio;
-      p.equipos.rival = rival;
       p.fecha = fecha;
+      p.competencia = competencia;
       guardar();
       render();
+      cerrarModal();
     }
-    cerrarModal();
   });
 }
 
-// ---------- Exportar e importar JSON ----------
+// ---------- Exportar e importar ----------
 
 const FORMATO_ARCHIVO = 'voleystats-partido';
+const FORMATO_PAQUETE = 'voleystats-paquete';
+const FORMATO_RESPALDO = 'voleystats-respaldo';
 
 function slug(t) {
-  return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  return String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function exportarPartido(id) {
-  const x = almacen.partidos[id];
-  if (!x) return;
-  const archivo = {
-    formato: FORMATO_ARCHIVO,
-    version: VERSION_DATOS,
-    exportado: new Date().toISOString(),
-    partido: x,
-  };
-  const blob = new Blob([JSON.stringify(archivo, null, 2)], { type: 'application/json' });
+function descargar(nombreArchivo, objeto) {
+  const blob = new Blob([JSON.stringify(objeto, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `voleystats-${slug(nombre('rival', x))}-vs-${slug(nombre('propio', x))}-${x.fecha || 'sin-fecha'}.json`;
+  a.download = nombreArchivo;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Devuelve el partido del archivo o lanza un Error con un mensaje para Martín.
-function leerArchivoPartido(texto) {
-  let datos;
-  try { datos = JSON.parse(texto); } catch (e) { throw new Error('El archivo no es un JSON válido.'); }
-  // Se aceptan el archivo exportado o un partido suelto
-  const x = datos && datos.formato === FORMATO_ARCHIVO ? datos.partido : datos;
-  const valido = x && typeof x === 'object' && x.id && x.equipos && Array.isArray(x.sets) &&
-    ['rival', 'propio'].includes(x.scouteado) &&
-    x.sets.every((st) => Array.isArray(st.rallies) && st.rallies.every((r) => Array.isArray(r.acciones)));
-  if (!valido) throw new Error('El archivo no parece un partido de VoleyStats.');
-  if ((x.version || 1) > VERSION_DATOS) {
-    throw new Error('El archivo viene de una versión más nueva de VoleyStats. Recarga la página e intenta de nuevo.');
-  }
-  return migrarPartido(x);
+function equiposDePartidos(partidos) {
+  const ids = new Set(partidos.flatMap((x) => LADOS.map((l) => x.equipoIds && x.equipoIds[l]).filter(Boolean)));
+  return Object.fromEntries([...ids].filter((id) => almacen.equipos[id]).map((id) => [id, almacen.equipos[id]]));
 }
 
-function elegirImportacion(x) {
+function exportarPartido(id) {
+  const x = almacen.partidos[id];
+  if (!x) return;
+  descargar(`voleystats-${slug(nombre('rival', x))}-vs-${slug(nombre('propio', x))}-${x.fecha || 'sin-fecha'}.json`, {
+    formato: FORMATO_ARCHIVO, version: VERSION_DATOS, exportado: new Date().toISOString(),
+    partido: x, equipos: equiposDePartidos([x]),
+  });
+}
+
+// Paquete de un equipo: el equipo, su plantel y todos los partidos en que se lo scoutea
+function exportarPaquete(eid) {
+  const e = almacen.equipos[eid];
+  if (!e) return;
+  const partidos = partidosDelEquipo(eid);
+  descargar(`voleystats-paquete-${slug(e.nombre)}-${hoyIso()}.json`, {
+    formato: FORMATO_PAQUETE, version: VERSION_DATOS, exportado: new Date().toISOString(),
+    equipo: eid, equipos: { ...equiposDePartidos(partidos), [eid]: e }, partidos,
+  });
+}
+
+function exportarRespaldo() {
+  descargar(`voleystats-respaldo-${hoyIso()}.json`, {
+    formato: FORMATO_RESPALDO, version: VERSION_DATOS, exportado: new Date().toISOString(),
+    equipos: almacen.equipos, partidos: Object.values(almacen.partidos),
+  });
+}
+
+function partidoValido(x) {
+  return x && typeof x === 'object' && x.id && Array.isArray(x.sets) && ['rival', 'propio'].includes(x.scouteado) &&
+    (x.equipos || x.equipoIds) &&
+    x.sets.every((st) => Array.isArray(st.rallies) && st.rallies.every((r) => Array.isArray(r.acciones)));
+}
+
+// Lee un archivo: partido suelto (viejo o nuevo), paquete o respaldo → { equipos, partidos }
+function leerArchivo(texto) {
+  let datos;
+  try { datos = JSON.parse(texto); } catch (e) { throw new Error('no es un JSON válido'); }
+  if (!datos || typeof datos !== 'object') throw new Error('no parece un archivo de VoleyStats');
+  if ((datos.version || 1) > VERSION_DATOS || (datos.partido && (datos.partido.version || 1) > VERSION_DATOS)) {
+    throw new Error('viene de una versión más nueva de VoleyStats (recarga la página e intenta de nuevo)');
+  }
+  let partidos, equipos = {};
+  if (datos.formato === FORMATO_PAQUETE || datos.formato === FORMATO_RESPALDO) {
+    partidos = Array.isArray(datos.partidos) ? datos.partidos : Object.values(datos.partidos || {});
+    equipos = datos.equipos || {};
+  } else if (datos.formato === FORMATO_ARCHIVO) {
+    partidos = [datos.partido];
+    equipos = datos.equipos || {};
+  } else {
+    partidos = [datos]; // partido suelto sin envoltorio
+  }
+  if (!partidos.length || !partidos.every(partidoValido)) throw new Error('no parece un partido de VoleyStats');
+  return { equipos, partidos };
+}
+
+// Conflicto de id: Reemplazar / Guardar como copia / Omitir, con «aplicar a todos»
+function elegirConflicto(x) {
   return new Promise((resolver) => {
     const existente = almacen.partidos[x.id];
     abrirModal(
       `<h2>Este partido ya está guardado</h2>` +
-      `<p>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))} · ${esc(fmtFecha(x.fecha))}</p>` +
-      `<p class="tenue">Guardado: ${esc(resumenPartido(existente))}<br>Archivo: ${esc(resumenPartido(x))}</p>` +
-      `<div class="acciones"><button class="btn izq" data-r="">Cancelar</button>` +
+      `<p>${esc(x.equipos ? `${x.equipos.propio} vs ${x.equipos.rival}` : '')}, ${esc(fmtFecha(x.fecha))}</p>` +
+      `<p class="tenue">Guardado: ${esc(resumenPartido(existente))}</p>` +
+      `<label class="opcion"><input type="checkbox" id="c-todos"> Aplicar a todos los siguientes</label>` +
+      `<div class="acciones"><button class="btn izq" data-r="omitir">Omitir</button>` +
       `<button class="btn" data-r="copia">Guardar como copia</button>` +
       `<button class="btn principal" data-r="reemplazar">Reemplazar</button></div>`,
-      true,
+      false,
     );
     $('modal').querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => {
+      const todos = $('c-todos').checked;
       cerrarModal();
-      resolver(b.dataset.r || null);
+      resolver({ accion: b.dataset.r, todos });
     }));
   });
 }
 
-async function importarArchivo(archivo) {
-  let x;
-  try {
-    x = leerArchivoPartido(await archivo.text());
-  } catch (e) {
-    await confirmar({ titulo: 'No se pudo importar', texto: e.message, aceptar: 'Entendido', soloAceptar: true });
-    dialogoPartidos();
-    return;
+// Importa varios archivos a la vez. Los equipos se asocian por id, nombre o alias.
+async function importarArchivos(archivos) {
+  const errores = [], entrantes = [];
+  for (const f of archivos) {
+    try { entrantes.push(leerArchivo(await f.text())); } catch (e) { errores.push(`${f.name}: ${e.message}`); }
   }
-  if (almacen.partidos[x.id]) {
-    const accion = await elegirImportacion(x);
-    if (!accion) { dialogoPartidos(); return; }
-    if (accion === 'copia') {
-      x.id = 'p' + Date.now().toString(36);
-      x.creado = new Date().toISOString();
+  const mapa = {}; // id de equipo en el archivo → id local
+  let equiposNuevos = 0;
+  for (const { equipos } of entrantes) {
+    for (const [id, e] of Object.entries(equipos)) {
+      if (mapa[id]) continue;
+      const local = almacen.equipos[id] || buscarEquipo(e.nombre) || (e.alias || []).map((a) => buscarEquipo(a)).find(Boolean);
+      if (local) {
+        local.alias = [...new Set([...(local.alias || []), ...(e.alias || []), ...(slug(e.nombre) !== slug(local.nombre) ? [e.nombre] : [])])];
+        unirPlantel(local.plantel, e.plantel);
+        mapa[id] = local.id;
+      } else {
+        const nuevo = { id, nombre: e.nombre, alias: e.alias || [], plantel: (e.plantel || []).map((j) => ({ ...j })) };
+        almacen.equipos[id] = nuevo;
+        mapa[id] = id;
+        equiposNuevos++;
+      }
     }
   }
-  almacen.partidos[x.id] = x;
-  cambiarPartido(x.id);
-  cerrarModal();
-  avisar(`Partido importado: ${nombre('rival', x)} vs ${nombre('propio', x)}`);
-}
-
-// ---------- Plantel: equipos conocidos y editor ----------
-
-function leerEquiposConocidos() {
-  try { return JSON.parse(localStorage.getItem(CLAVE_EQUIPOS)) || {}; } catch (e) { return {}; }
-}
-
-function recordarPlantel(nombreEquipo, jugadores) {
-  if (!jugadores.length) return;
-  const conocidos = leerEquiposConocidos();
-  conocidos[slug(nombreEquipo)] = { nombre: nombreEquipo, jugadores };
-  try { localStorage.setItem(CLAVE_EQUIPOS, JSON.stringify(conocidos)); } catch (e) { /* no crítico */ }
-}
-
-// Al crear un partido, carga el plantel guardado de equipos con el mismo nombre
-function cargarPlantelesConocidos(p) {
-  const conocidos = leerEquiposConocidos();
-  const cargados = [];
-  for (const eq of ['propio', 'rival']) {
-    const c = conocidos[slug(nombre(eq, p))];
-    if (c && c.jugadores.length) {
-      p.plantel[eq] = c.jugadores.map((j) => ({ ...j }));
-      cargados.push(`${nombre(eq, p)} (${c.jugadores.length})`);
+  let importados = 0, omitidos = 0, decisionTodos = null;
+  const tocados = [];
+  for (const { partidos } of entrantes) {
+    for (const original of partidos) {
+      const x = migrarPartido(JSON.parse(JSON.stringify(original)));
+      if (x.equipoIds) for (const l of LADOS) x.equipoIds[l] = mapa[x.equipoIds[l]] || x.equipoIds[l];
+      const antes = Object.keys(almacen.equipos).length;
+      asociarEquipos(x);
+      equiposNuevos += Object.keys(almacen.equipos).length - antes;
+      if (almacen.partidos[x.id]) {
+        let accion = decisionTodos;
+        if (!accion) {
+          const r = await elegirConflicto(x);
+          accion = r.accion;
+          if (r.todos) decisionTodos = accion;
+        }
+        if (accion === 'omitir') { omitidos++; continue; }
+        if (accion === 'copia') { x.id = nuevoId('p'); x.creado = new Date().toISOString(); }
+      }
+      almacen.partidos[x.id] = x;
+      tocados.push(x);
+      importados++;
     }
   }
-  return cargados;
+  guardar();
+  const eq = tocados.length ? equipoDe(tocados[0].scouteado, tocados[0]) : null;
+  if (eq) ui.equipoSel = eq.id;
+  cambiarModo('equipos');
+  const lineas = [`${importados} ${importados === 1 ? 'partido importado' : 'partidos importados'}`];
+  if (equiposNuevos) lineas.push(`${equiposNuevos} ${equiposNuevos === 1 ? 'equipo nuevo' : 'equipos nuevos'}`);
+  if (omitidos) lineas.push(`${omitidos} omitido${omitidos === 1 ? '' : 's'}`);
+  await confirmar({
+    titulo: errores.length && !importados ? 'No se pudo importar' : 'Importación lista',
+    texto: lineas.join(', ') + '.' + (errores.length ? ` No se pudieron leer: ${errores.join('; ')}.` : ''),
+    aceptar: 'Entendido', soloAceptar: true,
+  });
+  render();
 }
 
 function dialogoPlantel() {
@@ -3187,7 +3377,7 @@ function dialogoPlantel() {
       `<div class="plantel-lista">${filas || '<div class="vacio">Sin jugadores todavía.</div>'}</div>` +
       `<button type="button" class="btn" id="p-agregar">+ Agregar jugador</button>` +
       `<div class="carga-error" id="p-error"></div>` +
-      `<p class="tenue">El plantel se recuerda por nombre de equipo para los próximos partidos.</p>` +
+      `<p class="tenue">Es el plantel del equipo: se usa en todos sus partidos.</p>` +
       `<div class="acciones"><button type="button" class="btn" id="p-cancelar">Cancelar</button><button type="button" class="btn principal" id="p-guardar">Guardar</button></div>`,
       true,
     );
@@ -3236,84 +3426,343 @@ function dialogoPlantel() {
       $('p-error').textContent = e.message;
       return;
     }
+    // El plantel del equipo es la referencia; el partido guarda una copia
+    for (const lado of LADOS) {
+      const eq = equipoDe(lado, p);
+      if (eq) eq.plantel = limpio[lado].map((j) => ({ ...j }));
+    }
     mutar('Plantel', (pp) => { pp.plantel = limpio; });
-    recordarPlantel(nombre('propio'), limpio.propio);
-    recordarPlantel(nombre('rival'), limpio.rival);
     cerrarModal();
   }
 
   pintar();
 }
 
-// ---------- Menú de partidos ----------
+// ---------- Equipos: datos derivados ----------
+
+// Partidos en que se scoutea a un equipo, del más reciente al más antiguo
+function partidosDelEquipo(eid) {
+  return Object.values(almacen.partidos)
+    .filter((x) => x.equipoIds && x.equipoIds[x.scouteado] === eid)
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.creado || '').localeCompare(a.creado || ''));
+}
+
+function partidosComoRival(eid) {
+  return Object.values(almacen.partidos).filter((x) => x.equipoIds && LADOS.some((l) => l !== x.scouteado && x.equipoIds[l] === eid));
+}
+
+function ralliesDe(x) { return x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0); }
 
 function resumenPartido(x) {
   const g = setsGanados(x);
-  const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
+  const rallies = ralliesDe(x);
   return `Scouteando ${nombre(x.scouteado, x)}, sets ${g[0]}–${g[1]}, ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
 }
 
-function dialogoPartidos() {
-  const lista = Object.values(almacen.partidos)
-    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.creado || '').localeCompare(a.creado || ''));
-  const filas = lista.map((x) => {
-    const actual = x.id === almacen.actual;
-    return `<div class="partido-fila${actual ? ' actual' : ''}">` +
-      `<div class="partido-datos"><b>${esc(nombre('rival', x))} vs ${esc(nombre('propio', x))}</b>` +
-      `<span class="tenue">${esc(fmtFecha(x.fecha))} · ${esc(resumenPartido(x))}</span></div>` +
-      (actual ? '<span class="etiqueta">Abierto</span>' : `<button class="btn" data-abrir="${x.id}">Abrir</button>`) +
-      `<button class="btn" data-exportar="${x.id}" title="Descargar el partido como archivo JSON">Exportar</button>` +
-      `<button class="btn" data-eliminar="${x.id}" title="Eliminar partido">Eliminar</button>` +
-      `</div>`;
-  }).join('');
-  abrirModal(
-    `<h2>Partidos</h2>` +
-    `<p>Guardados en este navegador.</p>` +
-    `<div class="partidos-lista">${filas || '<div class="vacio">Todavía no hay partidos.</div>'}</div>` +
-    `<div class="acciones"><button class="btn principal" id="d-crear">Partido nuevo</button>` +
-    `<button class="btn izq" id="d-importar">Importar JSON…</button>` +
-    (partido() ? '<button class="btn" id="d-cerrar">Cerrar</button>' : '') + `</div>`,
-    !!partido(),
-  );
-  if (partido()) $('d-cerrar').addEventListener('click', cerrarModal);
-  $('d-crear').addEventListener('click', () => dialogoPartido({ nuevo: true, cancelable: !!partido() }));
-  $('d-importar').addEventListener('click', () => $('input-importar').click());
-  $('modal').querySelectorAll('[data-exportar]').forEach((b) => b.addEventListener('click', () => exportarPartido(b.dataset.exportar)));
-  $('modal').querySelectorAll('[data-abrir]').forEach((b) => b.addEventListener('click', () => {
-    cambiarPartido(b.dataset.abrir);
-    cerrarModal();
-  }));
-  $('modal').querySelectorAll('[data-eliminar]').forEach((b) => b.addEventListener('click', async () => {
-    const x = almacen.partidos[b.dataset.eliminar];
-    const ok = await confirmar({
-      titulo: '¿Eliminar este partido?',
-      texto: `${nombre('rival', x)} vs ${nombre('propio', x)} · ${fmtFecha(x.fecha)}. Se borran todas sus jugadas de este navegador y no se puede deshacer.`,
-      aceptar: 'Eliminar',
-    });
-    if (ok) eliminarPartido(x.id);
-    dialogoPartidos();
-  }));
+// Resultado por sets desde el punto de vista del equipo scouteado: «3–1 (25-20 22-25 …)»
+function resultadoSets(x) {
+  const i = x.scouteado === 'propio' ? 0 : 1;
+  const g = setsGanados(x);
+  const sets = x.sets.filter((st) => st.final).map((st) => `${st.final[i]}-${st.final[1 - i]}`);
+  return sets.length ? `${g[i]}–${g[1 - i]} (${sets.join(' ')})` : '—';
 }
+
+// Estado calculado: «Completo», «En curso · set 2, 14–11» o «Sin empezar»
+function estadoPartido(x) {
+  if (!ralliesDe(x)) return 'Sin empezar';
+  if (partidoTerminado(x)) return 'Completo';
+  const st = x.sets[x.sets.length - 1];
+  const i = x.scouteado === 'propio' ? 0 : 1;
+  if (st.final) { const g = setsGanados(x); return `En curso · sets ${g[i]}–${g[1 - i]}`; }
+  const m = marcadorTras(st);
+  return `En curso · set ${st.numero}, ${m[i]}–${m[1 - i]}`;
+}
+
+function rivalDe(x) { return nombre(otro(x.scouteado), x); }
+
+// ---------- Equipos: acciones ----------
 
 function eliminarPartido(id) {
   delete almacen.partidos[id];
   historial.length = 0; // deshacer no debe revivir un partido eliminado
   if (almacen.actual === id) {
-    const resto = Object.keys(almacen.partidos);
-    if (resto.length) {
-      cambiarPartido(resto[0]);
-    } else {
-      almacen.actual = null;
-      Video.soltarLocal();
-      if (Video.yt && Video.ytListo) { Video.yt.stopVideo(); Video.yt.getIframe().hidden = true; }
-      Video.fuente = null;
-      pendiente = nuevoPendiente();
-      guardar();
-      render();
-    }
-  } else {
-    guardar();
+    almacen.actual = null;
+    Video.soltarLocal();
+    if (Video.yt && Video.ytListo) { Video.yt.stopVideo(); Video.yt.getIframe().hidden = true; }
+    Video.fuente = null;
+    pendiente = nuevoPendiente();
   }
+  guardar();
+  render();
+}
+
+async function confirmarEliminarPartido(id) {
+  const x = almacen.partidos[id];
+  const ok = await confirmar({
+    titulo: '¿Eliminar este partido?',
+    texto: `${nombre(x.scouteado, x)} vs ${rivalDe(x)}, ${fmtFecha(x.fecha)}. Se borran todas sus jugadas de este navegador y no se puede deshacer.`,
+    aceptar: 'Eliminar',
+  });
+  if (ok) eliminarPartido(id);
+}
+
+async function confirmarEliminarEquipo(eid) {
+  const e = almacen.equipos[eid];
+  const comoRival = partidosComoRival(eid).length;
+  if (comoRival) {
+    await confirmar({
+      titulo: 'No se puede eliminar todavía',
+      texto: `${e.nombre} aparece como rival en ${comoRival} ${comoRival === 1 ? 'partido' : 'partidos'} de otros equipos. Júntalo con otro equipo o elimina esos partidos primero.`,
+      aceptar: 'Entendido', soloAceptar: true,
+    });
+    return;
+  }
+  const propios = partidosDelEquipo(eid);
+  const ok = await confirmar({
+    titulo: `¿Eliminar ${e.nombre}?`,
+    texto: propios.length
+      ? `Se borran el equipo, su plantel y sus ${propios.length} ${propios.length === 1 ? 'partido' : 'partidos'} de este navegador. No se puede deshacer; si quieres, exporta antes el paquete.`
+      : 'Se borran el equipo y su plantel de este navegador.',
+    aceptar: 'Eliminar',
+  });
+  if (!ok) return;
+  for (const x of propios) {
+    delete almacen.partidos[x.id];
+    if (almacen.actual === x.id) eliminarPartido(x.id);
+  }
+  delete almacen.equipos[eid];
+  historial.length = 0;
+  ui.equipoSel = null;
+  guardar();
+  render();
+}
+
+function dialogoRenombrar(eid) {
+  const e = almacen.equipos[eid];
+  abrirModal(
+    `<h2>Renombrar / alias</h2>` +
+    `<label><span class="etiqueta">Nombre</span><input class="campo" id="r-nombre" value="${esc(e.nombre)}"></label>` +
+    `<label><span class="etiqueta">Alias (otros nombres con que aparece, separados por coma)</span>` +
+    `<input class="campo" id="r-alias" value="${esc((e.alias || []).join(', '))}"></label>` +
+    `<p class="tenue">Al importar o crear un partido, cualquiera de estos nombres se asocia a este equipo.</p>` +
+    `<div class="carga-error" id="r-error"></div>` +
+    `<div class="acciones"><button class="btn" id="r-cancelar">Cancelar</button><button class="btn principal" id="r-ok">Guardar</button></div>`,
+    true,
+  );
+  $('r-cancelar').addEventListener('click', cerrarModal);
+  $('r-ok').addEventListener('click', () => {
+    const nuevoNombre = $('r-nombre').value.trim();
+    const alias = [...new Set($('r-alias').value.split(',').map((a) => a.trim()).filter((a) => a && slug(a) !== slug(nuevoNombre)))];
+    if (!nuevoNombre) { $('r-error').textContent = 'El nombre no puede quedar vacío.'; return; }
+    const choca = [nuevoNombre, ...alias].map((t) => buscarEquipo(t)).find((x) => x && x.id !== eid);
+    if (choca) { $('r-error').textContent = `«${choca.nombre}» ya usa ese nombre o alias. Si es el mismo equipo, usa «Juntar con…».`; return; }
+    e.nombre = nuevoNombre;
+    e.alias = alias;
+    for (const x of Object.values(almacen.partidos)) for (const l of LADOS) if (x.equipoIds && x.equipoIds[l] === eid) x.equipos[l] = nuevoNombre;
+    guardar();
+    cerrarModal();
+    render();
+  });
+}
+
+// Juntar: los partidos del otro equipo pasan a este; se unen planteles y alias
+function dialogoJuntar(eid) {
+  const e = almacen.equipos[eid];
+  const otros = Object.values(almacen.equipos).filter((x) => x.id !== eid).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  if (!otros.length) { confirmar({ titulo: 'Juntar con…', texto: 'No hay otros equipos guardados.', aceptar: 'Entendido', soloAceptar: true }); return; }
+  abrirModal(
+    `<h2>Juntar ${esc(e.nombre)} con…</h2>` +
+    `<p>Úsalo cuando el mismo equipo quedó guardado con dos nombres (por ejemplo «Católica» y «U. Católica»).</p>` +
+    `<label><span class="etiqueta">Otro equipo</span><select class="campo" id="j-otro">${otros.map((x) =>
+      `<option value="${x.id}">${esc(x.nombre)} · ${partidosDelEquipo(x.id).length + partidosComoRival(x.id).length} partidos</option>`).join('')}</select></label>` +
+    `<div class="opciones-scout"><span class="etiqueta">Nombre que queda</span>` +
+    `<label class="opcion"><input type="radio" name="j-nombre" value="este" checked> <span>${esc(e.nombre)}</span></label>` +
+    `<label class="opcion"><input type="radio" name="j-nombre" value="otro"> <span id="j-otro-nombre">${esc(otros[0].nombre)}</span></label></div>` +
+    `<p class="tenue">El otro nombre queda como alias. Los planteles se unen por número.</p>` +
+    `<div class="acciones"><button class="btn" id="j-cancelar">Cancelar</button><button class="btn principal" id="j-ok">Juntar</button></div>`,
+    true,
+  );
+  $('j-otro').addEventListener('change', () => { $('j-otro-nombre').textContent = almacen.equipos[$('j-otro').value].nombre; });
+  $('j-cancelar').addEventListener('click', cerrarModal);
+  $('j-ok').addEventListener('click', () => {
+    const otroEq = almacen.equipos[$('j-otro').value];
+    const queda = $('modal').querySelector('input[name="j-nombre"]:checked').value === 'este' ? e.nombre : otroEq.nombre;
+    juntarEquipos(eid, otroEq.id, queda);
+    cerrarModal();
+    ui.equipoSel = eid;
+    render();
+  });
+}
+
+function juntarEquipos(destinoId, origenId, nombreFinal) {
+  const destino = almacen.equipos[destinoId], origen = almacen.equipos[origenId];
+  const nombres = [destino.nombre, origen.nombre, ...(destino.alias || []), ...(origen.alias || [])];
+  destino.nombre = nombreFinal;
+  destino.alias = [...new Map(nombres.filter((n) => slug(n) !== slug(nombreFinal)).map((n) => [slug(n), n])).values()];
+  unirPlantel(destino.plantel, origen.plantel);
+  for (const x of Object.values(almacen.partidos)) {
+    for (const l of LADOS) {
+      if (!x.equipoIds) continue;
+      if (x.equipoIds[l] === origenId) x.equipoIds[l] = destinoId;
+      if (x.equipoIds[l] === destinoId) x.equipos[l] = nombreFinal;
+    }
+  }
+  if (prefs.seleccion && prefs.seleccion[origenId]) {
+    prefs.seleccion[destinoId] = [...new Set([...(prefs.seleccion[destinoId] || []), ...prefs.seleccion[origenId]])];
+    delete prefs.seleccion[origenId];
+    guardarPrefs();
+  }
+  delete almacen.equipos[origenId];
+  historial.length = 0;
+  guardar();
+}
+
+function dialogoPlantelEquipo(eid) {
+  // Se edita desde un partido del equipo si hay uno abierto de ese equipo; si no, directo
+  const e = almacen.equipos[eid];
+  const opcionesPos = (sel) => `<option value="">—</option>` +
+    Object.entries(POSICIONES).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${v.nombre}</option>`).join('');
+  let borrador = e.plantel.map((j) => ({ ...j }));
+  const leer = () => {
+    borrador = [...$('modal').querySelectorAll('.plantel-fila')].map((f) => ({
+      num: f.querySelector('.p-num').value.trim(), nombre: f.querySelector('.p-nombre').value.trim(), pos: f.querySelector('.p-pos').value,
+    }));
+  };
+  const pintar = (enfocar = false) => {
+    abrirModal(
+      `<h2>Plantel de ${esc(e.nombre)}</h2>` +
+      `<div class="plantel-lista">${borrador.map((j, i) =>
+        `<div class="plantel-fila" data-i="${i}"><input class="campo p-num" type="number" min="0" max="99" placeholder="Nº" value="${esc(j.num)}">` +
+        `<input class="campo p-nombre" type="text" placeholder="Nombre (opcional)" value="${esc(j.nombre || '')}">` +
+        `<select class="campo p-pos">${opcionesPos(j.pos)}</select><button type="button" class="ir p-quitar" title="Quitar">✕</button></div>`).join('') || '<div class="vacio">Sin jugadores todavía.</div>'}</div>` +
+      `<button type="button" class="btn" id="p-agregar">+ Agregar jugador</button><div class="carga-error" id="p-error"></div>` +
+      `<div class="acciones"><button class="btn" id="p-cancelar">Cancelar</button><button class="btn principal" id="p-guardar">Guardar</button></div>`,
+      true,
+    );
+    const nums = $('modal').querySelectorAll('.p-num');
+    if (enfocar && nums.length) nums[nums.length - 1].focus();
+    $('modal').querySelectorAll('.p-quitar').forEach((b) => b.addEventListener('click', () => { leer(); borrador.splice(Number(b.closest('.plantel-fila').dataset.i), 1); pintar(); }));
+    $('p-agregar').addEventListener('click', () => { leer(); borrador.push({ num: '', nombre: '', pos: '' }); pintar(true); });
+    $('modal').querySelectorAll('.plantel-fila input').forEach((inp) => inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); $('p-agregar').click(); } }));
+    $('p-cancelar').addEventListener('click', cerrarModal);
+    $('p-guardar').addEventListener('click', () => {
+      leer();
+      const res = [];
+      for (const j of borrador) {
+        if (j.num === '') continue;
+        const num = Number(j.num);
+        if (!Number.isInteger(num) || num < 0 || num > 99) { $('p-error').textContent = `«${j.num}» no es un número válido (0 a 99).`; return; }
+        if (res.some((x) => x.num === num)) { $('p-error').textContent = `El número ${num} está repetido.`; return; }
+        res.push({ num, ...(j.nombre ? { nombre: j.nombre } : {}), ...(j.pos ? { pos: j.pos } : {}) });
+      }
+      e.plantel = res.sort((a, b) => a.num - b.num);
+      guardar();
+      cerrarModal();
+      render();
+    });
+  };
+  pintar();
+}
+
+// ---------- Espacio usado en localStorage ----------
+
+const CUOTA_LOCAL = 5 * 1024 * 1024; // ~5 millones de caracteres por sitio en la mayoría de los navegadores
+
+function espacioUsado() {
+  let total = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      total += k.length + (localStorage.getItem(k) || '').length;
+    }
+  } catch (e) { /* sin acceso */ }
+  return { usado: total, fraccion: total / CUOTA_LOCAL };
+}
+
+// ---------- Pantalla Equipos ----------
+
+function renderEquipos() {
+  if (ui.modo !== 'equipos') return;
+  const equipos = Object.values(almacen.equipos);
+  const scouteados = equipos.filter((e) => partidosDelEquipo(e.id).length)
+    .sort((a, b) => (partidosDelEquipo(b.id)[0].fecha || '').localeCompare(partidosDelEquipo(a.id)[0].fecha || ''));
+  const otros = equipos.filter((e) => !partidosDelEquipo(e.id).length).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  if (!ui.equipoSel || !almacen.equipos[ui.equipoSel]) ui.equipoSel = (scouteados[0] || otros[0] || {}).id || null;
+
+  const fila = (e) => {
+    const ps = partidosDelEquipo(e.id);
+    const datos = ps.length
+      ? `${ps.length} ${ps.length === 1 ? 'partido' : 'partidos'}, último ${fmtFecha(ps[0].fecha)}, ${ps.reduce((n, x) => n + ralliesDe(x), 0)} rallies`
+      : `rival en ${partidosComoRival(e.id).length} ${partidosComoRival(e.id).length === 1 ? 'partido' : 'partidos'}`;
+    return `<button class="eq-fila${e.id === ui.equipoSel ? ' activo' : ''}" data-equipo="${e.id}"><b>${esc(e.nombre)}</b>` +
+      `<span>${esc(datos)}</span></button>`;
+  };
+  const esp = espacioUsado();
+  const pct100 = Math.round(esp.fraccion * 100);
+  $('eq-lista').innerHTML =
+    `<div class="eq-lista-cab"><h1>Equipos</h1><div class="eq-botones">` +
+    `<button class="btn" id="eq-nuevo">Partido nuevo</button><button class="btn" id="eq-importar">Importar…</button></div></div>` +
+    (scouteados.length ? `<div class="eq-grupo">${scouteados.map(fila).join('')}</div>` : '<p class="vacio">Todavía no hay equipos scouteados. Crea un partido o importa un archivo.</p>') +
+    (otros.length ? `<div class="eq-subtitulo">Solo como rival</div><div class="eq-grupo">${otros.map(fila).join('')}</div>` : '') +
+    `<div class="eq-espacio${esp.fraccion >= 0.7 ? ' alerta' : ''}">` +
+    `<div class="barra-espacio"><span style="width:${Math.min(100, pct100)}%"></span></div>` +
+    `<span>Espacio usado: ${pct100}${ESPACIO_FINO}% (${(esp.usado / 1048576).toFixed(1).replace('.', ',')} de 5 MB)</span>` +
+    (esp.fraccion >= 0.7 ? '<span class="aviso-espacio">Queda poco espacio: haz un respaldo completo y elimina partidos que ya no uses.</span>' : '') +
+    `<button class="btn-tenue chico" id="eq-respaldo">Respaldo completo</button></div>`;
+
+  const e = almacen.equipos[ui.equipoSel];
+  if (!e) { $('eq-detalle').innerHTML = ''; return; }
+  const ps = partidosDelEquipo(e.id);
+  const filasP = ps.map((x) =>
+    `<tr${x.id === almacen.actual ? ' class="actual"' : ''}><td>${esc(fmtFecha(x.fecha))}</td><td>${esc(rivalDe(x))}</td>` +
+    `<td class="tenue">${esc(x.competencia || '—')}</td><td>${esc(resultadoSets(x))}</td><td>${esc(estadoPartido(x))}</td>` +
+    `<td class="acciones-fila"><button class="btn chico" data-abrir="${x.id}">Abrir</button>` +
+    `<button class="btn-tenue chico" data-exportar="${x.id}">Exportar</button>` +
+    `<button class="btn-tenue chico" data-eliminar="${x.id}">Eliminar</button></td></tr>`).join('');
+  const plantel = e.plantel.length
+    ? `<div class="eq-plantel">${e.plantel.map((j) => `<span><b>#${j.num}</b> ${esc(j.nombre || '')}${j.pos ? ` <i>${esc(POSICIONES[j.pos].nombre.toLowerCase())}</i>` : ''}</span>`).join('')}</div>`
+    : '<p class="vacio">Sin jugadores cargados.</p>';
+  $('eq-detalle').innerHTML =
+    `<div class="eq-cab"><h2>${esc(e.nombre)}</h2>${e.alias && e.alias.length ? `<span class="tenue">también: ${esc(e.alias.join(', '))}</span>` : ''}</div>` +
+    `<div class="eq-acciones">` +
+    `<button class="btn principal" data-analizar="${e.id}" ${ps.length ? '' : 'disabled'}>Analizar</button>` +
+    `<button class="btn" data-nuevo-de="${e.id}">Partido nuevo</button>` +
+    `<button class="btn" data-paquete="${e.id}" ${ps.length ? '' : 'disabled'}>Exportar paquete</button>` +
+    `<button class="btn" data-renombrar="${e.id}">Renombrar / alias</button>` +
+    `<button class="btn" data-juntar="${e.id}">Juntar con…</button>` +
+    `<button class="btn-tenue" data-eliminar-equipo="${e.id}">Eliminar equipo</button></div>` +
+    `<div class="bloque-titulo">Partidos scouteados</div>` +
+    (ps.length
+      ? `<table class="tabla tabla-partidos"><tr><th>Fecha</th><th>Rival</th><th>Competencia</th><th>Resultado</th><th>Estado</th><th></th></tr>${filasP}</table>`
+      : '<p class="vacio">Este equipo todavía no tiene partidos scouteados.</p>') +
+    `<div class="bloque-titulo">Plantel<button class="btn-tenue chico" data-plantel-equipo="${e.id}">Editar plantel</button></div>` + plantel;
+}
+
+function conectarEquipos() {
+  $('pantalla-equipos').addEventListener('click', async (ev) => {
+    const t = ev.target;
+    const b = (sel) => t.closest(sel);
+    if (b('[data-equipo]')) { ui.equipoSel = b('[data-equipo]').dataset.equipo; renderEquipos(); return; }
+    if (b('#eq-nuevo')) { dialogoPartido({ nuevo: true, cancelable: true }); return; }
+    if (b('#eq-importar')) { $('input-importar').click(); return; }
+    if (b('#eq-respaldo')) { exportarRespaldo(); return; }
+    if (b('[data-nuevo-de]')) { dialogoPartido({ nuevo: true, cancelable: true, equipoA: almacen.equipos[b('[data-nuevo-de]').dataset.nuevoDe].nombre }); return; }
+    if (b('[data-analizar]')) { analizarEquipo(b('[data-analizar]').dataset.analizar); return; }
+    if (b('[data-paquete]')) { exportarPaquete(b('[data-paquete]').dataset.paquete); return; }
+    if (b('[data-renombrar]')) { dialogoRenombrar(b('[data-renombrar]').dataset.renombrar); return; }
+    if (b('[data-juntar]')) { dialogoJuntar(b('[data-juntar]').dataset.juntar); return; }
+    if (b('[data-eliminar-equipo]')) { await confirmarEliminarEquipo(b('[data-eliminar-equipo]').dataset.eliminarEquipo); return; }
+    if (b('[data-plantel-equipo]')) { dialogoPlantelEquipo(b('[data-plantel-equipo]').dataset.plantelEquipo); return; }
+    if (b('[data-abrir]')) { cambiarPartido(b('[data-abrir]').dataset.abrir); cambiarModo('captura'); return; }
+    if (b('[data-exportar]')) { exportarPartido(b('[data-exportar]').dataset.exportar); return; }
+    if (b('[data-eliminar]')) { await confirmarEliminarPartido(b('[data-eliminar]').dataset.eliminar); }
+  });
+}
+
+function analizarEquipo(eid) {
+  stats.equipoId = eid;
+  ui.clipsOverride = null;
+  cambiarModo('stats');
 }
 
 function cambiarPartido(id) {
@@ -3399,7 +3848,9 @@ function conectarEventos() {
   $('partido-info').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-menu').addEventListener('click', () => alternarMenu('menu-header'));
   $('menu-header').addEventListener('click', (ev) => { if (ev.target.closest('button')) cerrarMenus(); });
-  $('btn-partidos').addEventListener('click', dialogoPartidos);
+  conectarEquipos();
+  $('btn-partidos').addEventListener('click', () => cambiarModo('equipos'));
+  $('btn-respaldo').addEventListener('click', exportarRespaldo);
   $('btn-datos').addEventListener('click', () => { if (partido()) dialogoPartido({ nuevo: false, cancelable: true }); });
   $('btn-plantel').addEventListener('click', dialogoPlantel);
   $('btn-cambiar-video').addEventListener('click', () => {
@@ -3453,9 +3904,9 @@ function conectarEventos() {
   $('btn-exportar').addEventListener('click', () => { if (partido()) exportarPartido(almacen.actual); });
   $('btn-importar').addEventListener('click', () => $('input-importar').click());
   $('input-importar').addEventListener('change', (ev) => {
-    const f = ev.target.files[0];
+    const archivos = [...ev.target.files];
     ev.target.value = '';
-    if (f) importarArchivo(f);
+    if (archivos.length) importarArchivos(archivos);
   });
 
   $('form-youtube').addEventListener('submit', (ev) => {
@@ -3542,12 +3993,10 @@ function iniciar() {
   setInterval(actualizarVideoUI, 100);
   setInterval(renderGuardado, 1000);
 
+  // Se vuelve a la pantalla en que se estaba; sin partido abierto, a Equipos
   const p = partido();
-  if (!p) {
-    dialogoPartido({ nuevo: true, cancelable: false });
-  } else if (p.video && p.video.tipo === 'youtube') {
-    cargarVideoYouTube(p.video.url, false);
-  }
+  cambiarModo(prefs.modo === 'captura' && p ? 'captura' : prefs.modo === 'stats' && p ? 'stats' : 'equipos');
+  if (p && p.video && p.video.tipo === 'youtube') cargarVideoYouTube(p.video.url, false);
 }
 
 cargarAlmacen();
