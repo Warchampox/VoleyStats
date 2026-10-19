@@ -934,6 +934,28 @@ body.modo-equipos .pantalla-equipos {
 .chip-partido b { font-weight: 600; }
 .chip-partido.activo { background: var(--tecla); color: var(--texto); text-decoration: none; }
 
+/* ---------- Jugadores, ¿a quién le arman? y comparar ---------- */
+.tabla .n { display: block; color: var(--texto-3); font-weight: 400; font-size: 11px; }
+.tabla-aquien, .tabla-comparar { max-width: 760px; }
+.tabla-aquien th:not(:first-child), .tabla-comparar tr:first-child th:not(:first-child) { color: var(--texto-2); font-weight: 600; }
+.tabla-comparar tr.sub th { text-align: left; padding-top: 12px; color: var(--texto-3); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.tabla-comparar td.dif { color: var(--texto); font-weight: 700; }
+.tabla-comparar td.poco { color: var(--texto-3); opacity: .7; }
+.fichas-jugadores { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 8px; }
+.ficha-jugador { border: 1px solid var(--borde); border-radius: 2px; padding: 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.ficha-jugador:hover { border-color: var(--borde-control); }
+.fj-cab { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fj-cab b { font-family: var(--display); font-style: italic; font-size: 18px; color: var(--texto); }
+.fj-cab span { color: var(--texto-3); font-size: 12px; }
+.fj-cab .n { margin-left: auto; }
+.ficha-jugador svg { width: 100%; max-width: 200px; align-self: center; }
+.ficha-jugador dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; font-size: 12px; }
+.ficha-jugador dt { color: var(--texto-3); }
+.ficha-jugador dd { margin: 0; color: var(--texto-2); }
+.ficha-jugador dd b { color: var(--texto); font-weight: 600; }
+.fj-rec { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 12px; color: var(--texto-3); }
+.barra-calif.chica { height: 16px; margin: 0; font-size: 10px; }
+
 /* ---------- Resumen en PDF ----------
    En pantalla no se ve. Al imprimir se oculta toda la app y solo queda el resumen,
    con tema claro y A4 vertical. */

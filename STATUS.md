@@ -332,5 +332,23 @@ Reemplaza la dirección «Cabina». Solo estilos y tipografía; lógica, layout 
   eliminar equipo, importar paquete + JSON v1 suelto (se asocia por alias), 90 + 91 + 92 = 273, conflicto con Omitir.
 - `?v=24`.
 
+## Tendencias de jugadores y momento del set (2026-10-19)
+
+- Jugadores identificados con `etiquetaJugador(num)` («#7 Pérez» desde el plantel del equipo) en tablas, filtros,
+  clips, fichas y PDF.
+- Tecla N: N + número (Enter o 0,6 s) asigna a la última recepción, defensa o ataque del rally en pantalla; N N quita;
+  Esc cancela. Sugerencia «¿#7 Pérez?» en el paso Resultado (misma rotación y zona en partidos del equipo); N Enter
+  la acepta. Todo con Ctrl+Z. N no choca con otras teclas.
+- Momento del set calculado (`momentoDe`): Inicio / Medio / Final (5.º set 0–4, 5–9, 10+); filtro segmentado nuevo.
+- Pestaña «Jugadores»: fichas (≥ 5 acciones) con mini cancha agregada (flechas ≥ 5 % de los remates), zonas,
+  armadas, golpe, resultado y recepción; clic filtra al jugador.
+- «¿A quién le arman?» en Equipo: todo, pase malo (! -) y final de set.
+- Pestaña «Comparar»: por Set / Momento / Partido (máx. 4 grupos; partidos sin jugadas no aparecen), ▲ ▼ con
+  diferencias ≥ 15 pp, grupos < 8 jugadas tenues.
+- PDF: «¿A quién le arman?» y tabla compacta por jugador en la página 2 (medido: sigue en 2 páginas con 3 jugadores).
+- Probado con Católica (2 partidos con jugadores asignados, #7 Pérez, #11 Soto, #9): filtro Final (44 de 183),
+  N Enter acepta la sugerencia, N 1 1, N 9 con espera, N N quita, Ctrl+Z; comparar por set, momento y partido.
+- `?v=25`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

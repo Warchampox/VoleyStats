@@ -16,6 +16,7 @@ const TECLAS = {
   adelanteLargo: 'l', // también Shift+→
   silencio: 'm',
   foco: 'o', // entra y sale del modo foco
+  jugador: 'n', // N y el número: asigna jugador; N N lo quita
   ayuda: '?',
   cuadroAtras: ',',
   cuadroAdelante: '.',
@@ -1353,7 +1354,10 @@ function contenidoEstado(e) {
       return { ...base, titulo: 'Resultado del ataque',
         contexto: `${GOLPES[atq.golpe].nombre}${calc ? ' · ' + calc : ''}${z ? ' desde ' + z : ''}`,
         principales: Object.entries(TECLAS.resultado).map(([k, res]) => principal(k, RESULTADOS[res].nombre, simboloMini(res))),
-        secundarias: [deshacer].filter(Boolean) };
+        secundarias: (() => {
+          const sug = sugerenciaJugador();
+          return [sug ? secundaria(['N', 'Enter'], `¿${etiquetaJugador(sug.num)}?`) : secundaria(nombreTecla(TECLAS.jugador), 'jugador'), deshacer].filter(Boolean);
+        })() };
     }
   }
   return base;
@@ -1366,6 +1370,14 @@ function jugadoresDe(lado, p = partido()) {
   const eq = equipoDe(lado, p);
   const lista = eq ? eq.plantel : (p && p.plantel && p.plantel[lado]) || [];
   return lista.slice().sort((a, b) => a.num - b.num);
+}
+
+// Etiqueta corta: «#7 Pérez» si el plantel del equipo tiene nombre, si no «#7».
+// En estadísticas se usa el equipo analizado (un número = un jugador en todos sus partidos).
+function etiquetaJugador(num, eq = null) {
+  const equipo = eq || (ui.modo === 'stats' ? equipoStats() : null) || (partido() && equipoDe(partido().scouteado));
+  const j = equipo && equipo.plantel.find((x) => x.num === num);
+  return j && j.nombre ? `#${num} ${j.nombre}` : `#${num}`;
 }
 
 function textoJugador(num, p = partido()) {
@@ -1398,7 +1410,7 @@ function renderJugadores() {
   boton.hidden = false;
   const lista = jugadoresDe(p.scouteado);
   const accion = accionParaJugador();
-  const asignado = accion && accion.jugador != null ? `#${accion.jugador}` : '—';
+  const asignado = accion && accion.jugador != null ? etiquetaJugador(accion.jugador) : '—';
   boton.innerHTML = `Jugador <b>${accion ? asignado : ''}</b> ▾`;
   boton.title = !accion ? 'No hay recepción, defensa ni ataque para asignar' : `Asignar jugador a: ${DESTINO_JUGADOR[accion.tipo].toLowerCase()}`;
   boton.classList.toggle('con-jugador', !!(accion && accion.jugador != null));
@@ -1418,6 +1430,93 @@ function renderJugadores() {
 function alternarMenuJugador(abrir = $('jug-popover').hidden) {
   $('jug-popover').hidden = !abrir;
   renderJugadores();
+}
+
+// ---------- Asignar jugador con el teclado: N + número ----------
+
+const ESPERA_NUMERO_MS = 600;
+const NOMBRE_ACCION_JUGADOR = { ataque: 'al ataque', recepcion: 'a la recepción', defensa: 'a la defensa' };
+
+function terminarEntradaJugador() {
+  if (ui.entradaJugador) clearTimeout(ui.entradaJugador.timer);
+  ui.entradaJugador = null;
+  ui.aviso = null;
+  renderEstado();
+}
+
+function confirmarEntradaJugador() {
+  const ent = ui.entradaJugador;
+  if (!ent) return;
+  terminarEntradaJugador();
+  if (ent.digitos) asignarJugadorA(Number(ent.digitos));
+}
+
+// Devuelve true si la tecla se usó en la entrada del número
+function manejarTeclaJugador(k) {
+  const ent = ui.entradaJugador;
+  if (k === TECLAS.jugador) {
+    if (ent && !ent.digitos) { terminarEntradaJugador(); asignarJugadorA(null); return true; }
+    if (ent) confirmarEntradaJugador();
+    const accion = accionParaJugador();
+    if (!accion) { avisar('No hay recepción, defensa ni ataque para asignar.'); return true; }
+    ui.entradaJugador = { digitos: '', timer: null };
+    const sug = sugerenciaJugador();
+    ui.aviso = { texto: `Jugador ${NOMBRE_ACCION_JUGADOR[accion.tipo]}: escribe el número${sug ? `, o Enter para ${etiquetaJugador(sug.num)}` : ''} (N otra vez quita)`, hasta: Infinity };
+    renderEstado();
+    return true;
+  }
+  if (!ent) return false;
+  if (/^[0-9]$/.test(k)) {
+    ent.digitos += k;
+    clearTimeout(ent.timer);
+    if (ent.digitos.length >= 2) { confirmarEntradaJugador(); return true; }
+    ent.timer = setTimeout(confirmarEntradaJugador, ESPERA_NUMERO_MS);
+    ui.aviso = { texto: `Jugador #${ent.digitos}…`, hasta: Infinity };
+    renderEstado();
+    return true;
+  }
+  if (k === 'enter') {
+    if (ent.digitos) { confirmarEntradaJugador(); return true; }
+    const sug = sugerenciaJugador();
+    terminarEntradaJugador();
+    if (sug) asignarJugadorA(sug.num); else avisar('Escribe el número del jugador después de N.');
+    return true;
+  }
+  terminarEntradaJugador();
+  return k === 'escape'; // Esc solo cancela; cualquier otra tecla sigue su curso
+}
+
+function asignarJugadorA(num) {
+  const accion = accionParaJugador();
+  if (!accion) { avisar('No hay recepción, defensa ni ataque para asignar.'); return; }
+  const r = rallyMostrado(setActual(partido()));
+  const i = r.acciones.indexOf(accion);
+  if (num == null) {
+    if (accion.jugador == null) { avisar(`Sin jugador asignado ${NOMBRE_ACCION_JUGADOR[accion.tipo]}.`); return; }
+    const antes = etiquetaJugador(accion.jugador);
+    mutar(`Quitar ${antes}`, () => { delete r.acciones[i].jugador; });
+    avisar(`${antes} quitado ${NOMBRE_ACCION_JUGADOR[accion.tipo]}`.replace(' al ', ' del ').replace(' a la ', ' de la '));
+    return;
+  }
+  mutar(`Jugador ${etiquetaJugador(num)}`, () => { r.acciones[i].jugador = num; });
+  avisar(`${etiquetaJugador(num)} asignado ${NOMBRE_ACCION_JUGADOR[accion.tipo]}`);
+}
+
+// Jugador probable en el paso Resultado: el más frecuente en la misma rotación y zona
+// de ataque en los rallies anteriores del equipo. Solo sugiere; nunca asigna solo.
+function sugerenciaJugador() {
+  const e = estado();
+  if (e.modo !== 'resultado' || e.ultima.jugador != null) return null;
+  const armada = e.r.acciones[e.r.acciones.length - 2];
+  const rot = rotacionEn(e.set, e.set.rallies.indexOf(e.r), e.p.scouteado);
+  const zona = zonaAtaque(armada);
+  const eq = equipoDe(e.p.scouteado, e.p);
+  const cuenta = {};
+  for (const j of recolectar(eq ? partidosDelEquipo(eq.id) : [e.p]).jugadas) {
+    if (j.ataque && j.ataque !== e.ultima && j.jugador != null && j.rot === rot && j.zona === zona) cuenta[j.jugador] = (cuenta[j.jugador] || 0) + 1;
+  }
+  const mejor = Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0];
+  return mejor ? { num: Number(mejor[0]), veces: mejor[1], rot, zona } : null;
 }
 
 function asignarJugador(num) {
@@ -1468,6 +1567,7 @@ function renderAyuda() {
     fila(['Ctrl+Z'], 'Deshacer el último paso') +
     fila([nombreTecla(T.nuevoRally)], 'Rally nuevo en el segundo actual') +
     fila([nombreTecla(T.cerrarSinAtaque)], 'Cerrar rally sin ataque') +
+    fila([nombreTecla(T.jugador), '7'], 'Jugador a la última recepción, defensa o ataque (N N quita)') +
     fila(['Esc'], 'Volver un paso de clic') +
     fila([nombreTecla(T.foco)], 'Modo foco') +
     `<div class="ayuda-pie">Las teclas del paso actual están siempre en «Ahora».</div>`;
@@ -1925,17 +2025,29 @@ function actualizarVideoUI() {
 
 const stats = {
   partidos: null, // Set de ids a sumar; null = solo el partido abierto
-  filtros: { set: [], rot: [], pase: [], fase: [], armada: [], zona: [], golpe: [], resultado: [], jugador: [] },
+  filtros: { set: [], rot: [], pase: [], fase: [], momento: [], armada: [], zona: [], golpe: [], resultado: [], jugador: [] },
   vista: 'equipo', // equipo | ataque | sideout | saque
   mapa: 'trayectorias', // trayectorias | calor
 };
 
 const VISTAS = {
   equipo: 'Equipo',
+  jugadores: 'Jugadores',
   ataque: 'Ataque',
   sideout: 'Side-out y recepción',
   saque: 'Saque y bloqueo',
+  comparar: 'Comparar',
 };
+
+const MOMENTOS = { inicio: 'Inicio', medio: 'Medio', final: 'Final' };
+
+// Momento del set según el mayor de los dos marcadores antes del rally:
+// 0–9 inicio, 10–19 medio, 20+ final (en el 5.º set: 0–4, 5–9, 10+)
+function momentoDe(numeroSet, marcador) {
+  const m = Math.max(marcador[0], marcador[1]);
+  const [a, b] = numeroSet === 5 ? [5, 10] : [10, 20];
+  return m < a ? 'inicio' : m < b ? 'medio' : 'final';
+}
 
 const FASES = { recepcion: 'Recepción', contra: 'Contra', recovery: 'Cobertura', libre: 'Libre' }; // 'recovery' se muestra como «Cobertura»
 const ORDEN_ZONAS = ['Z4', 'Z3', 'Z2', 'Z1', 'Z6', 'Z5'];
@@ -1943,12 +2055,12 @@ const CALIFS = ['#', '+', '!', '-', '='];
 
 // Qué filtros aplican a cada tipo de dato
 const DIMS_DATOS = {
-  jugadas: ['set', 'rot', 'pase', 'fase', 'armada', 'zona', 'golpe', 'resultado', 'jugador'],
-  recepciones: ['set', 'rot', 'pase', 'jugador'],
-  rallies: ['set', 'rot', 'pase'],
-  todos: ['set', 'rot'],
+  jugadas: ['set', 'rot', 'pase', 'fase', 'momento', 'armada', 'zona', 'golpe', 'resultado', 'jugador'],
+  recepciones: ['set', 'rot', 'pase', 'momento', 'jugador'],
+  rallies: ['set', 'rot', 'pase', 'momento'],
+  todos: ['set', 'rot', 'momento'],
 };
-const DATOS_VISTA = { equipo: 'jugadas', ataque: 'jugadas', sideout: 'rallies', saque: 'todos' };
+const DATOS_VISTA = { equipo: 'jugadas', jugadores: 'jugadas', ataque: 'jugadas', sideout: 'rallies', saque: 'todos', comparar: 'jugadas' };
 
 // Alcance de las estadísticas: un EQUIPO y los partidos en que se lo scoutea.
 // La selección se recuerda por equipo como lista de partidos quitados (los nuevos entran solos).
@@ -1992,7 +2104,7 @@ function recolectar(partidos) {
     const scout = p.scouteado;
     for (const set of p.sets) {
       set.rallies.forEach((r, idx) => {
-        const base = { pid: p.id, set: set.numero, rally: idx + 1, rot: rotacionEn(set, idx, scout) };
+        const base = { pid: p.id, set: set.numero, rally: idx + 1, rot: rotacionEn(set, idx, scout), momento: momentoDe(set.numero, r.marcador) };
         const rec = r.acciones.find((a) => a.tipo === 'recepcion');
         if (r.saca !== scout && r.gana) {
           const primerAtaque = r.acciones.find((a) => a.tipo === 'ataque');
@@ -2263,7 +2375,7 @@ function partesRecepcion(d) {
     kpis,
     barra: n ? `<div class="barra-calif">${barra}</div>` : '',
     porJugador: conJugador.length
-      ? `<table class="tabla">${cab('Jug.')}${conJugador.map((j) => fila(`#${j}`, rs.filter((r) => r.jugador === j), { jugador: j })).join('')}</table>`
+      ? `<table class="tabla">${cab('Jug.')}${conJugador.map((j) => fila(esc(etiquetaJugador(j)), rs.filter((r) => r.jugador === j), { jugador: j })).join('')}</table>`
       : '',
     porRot: `<table class="tabla">${cab('Rot.')}${porRot}</table>`,
   };
@@ -2326,7 +2438,8 @@ function textoFiltro(dim, v) {
     case 'zona': return v;
     case 'golpe': return GOLPES[v].nombre.toLowerCase();
     case 'resultado': return RESULTADOS[v].nombre.toLowerCase();
-    case 'jugador': return `#${v}`;
+    case 'jugador': return etiquetaJugador(v);
+    case 'momento': return MOMENTOS[v].toLowerCase();
     default: return String(v);
   }
 }
@@ -2348,6 +2461,28 @@ function lineaPartido(x) {
   const rallies = x.sets.reduce((n, st) => n + st.rallies.filter((r) => r.gana).length, 0);
   return `<div><b>vs ${esc(nombre(otro(scout), x))}</b>, ${esc(fmtFecha(x.fecha))}: ` +
     `<b>${g[i]}–${g[1 - i]}</b>${sets.length ? ' (' + sets.join(' ') + ')' : ''}, ${rallies} rallies</div>`;
+}
+
+// Tabla compacta por jugador para el PDF
+function tablaJugadoresPdf(d) {
+  const lista = resumenJugadores(d).filter((x) => x.ataques.length);
+  if (!lista.length) return '';
+  const top = (l, clave, nombres) => {
+    const c = {};
+    for (const x of l) if (x[clave] != null) c[x[clave]] = (c[x[clave]] || 0) + 1;
+    const tot = Object.values(c).reduce((a, b) => a + b, 0);
+    const [k, v] = Object.entries(c).sort((a, b) => b[1] - a[1])[0] || [];
+    return k == null ? '—' : `${nombres(k)} ${txtPct(pct(v, tot))}`;
+  };
+  return `<table class="tabla"><tr><th>Jugador</th><th>Ataques</th><th>Zonas</th><th>Dirección dominante</th><th>Golpe</th><th>Punto</th></tr>` +
+    lista.map(({ num, ataques }) => {
+      const r = resumenAtaques(ataques);
+      const zonas = mezcla(ataques, 'zona', (z) => z, 2).replace(/<\/?b>/g, '');
+      const rem = ataques.filter((j) => j.golpe === 'remate' && j.dir);
+      return `<tr><th>${esc(etiquetaJugador(num))}</th><td class="clave">${ataques.length}</td><td>${zonas}</td>` +
+        `<td>${top(rem, 'dir', (x) => NOMBRE_DIR[x])}</td><td>${top(ataques, 'golpe', (g) => GOLPES[g].corto)}</td>` +
+        `<td class="clave">${txtPct(pct(r.pts, r.conRes))}</td></tr>`;
+    }).join('') + `</table>`;
 }
 
 function htmlResumen(d, partidos) {
@@ -2389,6 +2524,8 @@ function htmlResumen(d, partidos) {
     `<section class="r-sec"><h2>Recepción <span>${rec.n} recepciones</span></h2>${rec.barra}` +
     `<div class="r-2col"><div><h3>Por rotación</h3>${rec.porRot}</div>` +
     (rec.porJugador ? `<div><h3>Por jugador</h3>${rec.porJugador}</div>` : '') + `</div></section>` +
+    `<section class="r-sec"><h2>¿A quién le arman? <span>% de los ataques con jugador asignado</span></h2>` +
+    `<div class="r-2col"><div>${tablaAQuien(d)}</div><div>${tablaJugadoresPdf(d)}</div></div></section>` +
     `<footer class="r-pie">Generado con VoleyStats · ${esc(fmtFecha(hoyIso()))}</footer>` +
     `</div>`;
 }
@@ -2427,6 +2564,7 @@ function gruposSegmentados(d) {
     { k: 'fase', nombre: 'Fase', opciones: [{ t: 'Todo', v: [] }, { t: 'Side-out', v: ['recepcion'] }, { t: 'Contra', v: ['contra', 'recovery', 'libre'] }] },
     { k: 'pase', nombre: 'Pase', opciones: [{ t: 'Todo', v: [] }, { t: 'Bueno # +', v: ['#', '+'] }, { t: 'Malo ! -', v: ['!', '-'] }] },
     { k: 'set', nombre: 'Set', opciones: [{ t: 'Todos', v: [] }, ...sets.map((n) => ({ t: String(n), v: [n] }))] },
+    { k: 'momento', nombre: 'Momento', opciones: [{ t: 'Todo', v: [] }, ...Object.entries(MOMENTOS).map(([k, t]) => ({ t, v: [k] }))] },
   ];
 }
 
@@ -2465,7 +2603,7 @@ function renderFiltros(d) {
     ['zona', 'Zona', ORDEN_ZONAS, (v) => v],
     ['golpe', 'Golpe', Object.keys(GOLPES), (v) => (v === 'remate' ? 'Remate' : GOLPES[v].corto)],
     ['resultado', 'Resultado', Object.keys(RESULTADOS), (v) => RESULTADOS[v].nombre],
-    ['jugador', 'Jugador', jugadores, (v) => `#${v}`],
+    ['jugador', 'Jugador', jugadores, (v) => esc(etiquetaJugador(v))],
   ];
   $('mas-filtros').hidden = !stats.masFiltros;
   $('mas-filtros').innerHTML = `<div class="filtros">${filas.map(([k, nom, vals, et]) =>
@@ -2628,6 +2766,7 @@ function vistaEquipo(d) {
     `<div class="tendencia"><div>${js.length ? mediaCancha(js, { ancho: 258, alto: 280, k: 0.075, etiquetas: 'todas' }) : '<p class="stats-nota">Sin armadas con estos filtros.</p>'}` +
     `<div class="nota-color">color = armada predominante</div></div>` +
     `<div class="frases">${frasesEquipo(d, js, todas)}</div></div>` +
+    `<div class="bloque-titulo">¿A quién le arman?<span>todo, con pase malo y en el final del set</span></div>` + tablaAQuien(d) +
     `<div class="bloque-titulo">Ficha por rotación<span>${rotSel ? `P${rotSel} filtrada` : 'clic en una cancha = filtra esa rotación'}</span></div>` +
     `<div class="fichas${rotSel ? ' filtrada' : ''}">${fichas}</div>` +
     plegable('tablaEquipo', 'Ver tabla · rotación × zona', tabla);
@@ -2745,7 +2884,7 @@ function vistaAtaqueV2(d) {
   const porZona = zonas.map(({ z, l }) => ({ etiqueta: z, lista: l, filtro: { zona: z } }));
   porZona.push({ etiqueta: 'Total', lista: js, filtro: {} });
   const jugs = [...new Set(js.map((j) => j.jugador).filter((x) => x != null))]
-    .map((n) => ({ etiqueta: `#${n}`, lista: js.filter((j) => j.jugador === n), filtro: { jugador: n } }))
+    .map((n) => ({ etiqueta: esc(etiquetaJugador(n)), lista: js.filter((j) => j.jugador === n), filtro: { jugador: n } }))
     .sort((a, b) => b.lista.length - a.lista.length);
   const porJug = jugs.length
     ? tablaAtaque([...jugs, { etiqueta: 'Total', lista: js.filter((j) => j.jugador != null), filtro: {} }], 'Jugador')
@@ -2768,6 +2907,181 @@ function vistaSideoutRecepcion(d) {
   return vistaSideout(d) + `<div class="bloque-titulo">Recepción</div>` + vistaRecepcion(d);
 }
 
+// ---------- Tendencias de jugadores ----------
+
+const MIN_ACCIONES_FICHA = 5;
+const MIN_JUGADAS_GRUPO = 8;
+const DIFERENCIA_DESTACADA = 15; // puntos porcentuales
+
+// «¿A quién le arman?»: reparto de los ataques con jugador asignado
+function repartoAtaques(lista) {
+  const conJug = lista.filter((j) => j.ataque && j.jugador != null);
+  const c = {};
+  for (const j of conJug) c[j.jugador] = (c[j.jugador] || 0) + 1;
+  return { n: conJug.length, porJugador: c };
+}
+
+function tablaAQuien(d) {
+  const ataques = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque);
+  const cols = [
+    { t: 'Todo', l: ataques },
+    { t: 'Con pase malo (! -)', l: ataques.filter((j) => j.pase === '!' || j.pase === '-') },
+    { t: 'Final de set', l: ataques.filter((j) => j.momento === 'final') },
+  ].map((c) => ({ ...c, r: repartoAtaques(c.l) }));
+  const total = cols[0].r;
+  if (!total.n) return '<p class="stats-nota">Asigna jugadores a los ataques (N y el número, o el menú «Jugador») para ver a quién le arman.</p>';
+  const jugadores = Object.keys(total.porJugador).map(Number).sort((a, b) => total.porJugador[b] - total.porJugador[a]).slice(0, 8);
+  const maxCol = cols.map((c) => Math.max(0, ...jugadores.map((n) => c.r.porJugador[n] || 0)));
+  return `<table class="tabla tabla-aquien"><tr><th>Jugador</th>${cols.map((c) => `<th>${c.t} <span class="n">n=${c.r.n}</span></th>`).join('')}</tr>` +
+    jugadores.map((n) => `<tr><th class="clic" data-fijar='${JSON.stringify({ jugador: n })}'>${esc(etiquetaJugador(n))}</th>` +
+      cols.map((c, i) => {
+        const v = c.r.porJugador[n] || 0;
+        return `<td class="${v && v === maxCol[i] ? 'max' : 'clave'}">${c.r.n ? txtPct(pct(v, c.r.n)) : '—'}</td>`;
+      }).join('') + '</tr>').join('') +
+    `</table><p class="stats-nota">Porcentaje de los ataques con jugador asignado en cada columna. Resaltado: el más buscado.</p>`;
+}
+
+// Mini cancha rival con los ataques de un jugador: desde cada zona, flechas por dirección (grosor = %)
+function canchaJugador(lista) {
+  const id = `cj${++idSvg}`;
+  const rem = lista.filter((j) => j.golpe === 'remate' && j.dir);
+  let s = marcadores(id);
+  s += `<rect x="0" y="0" width="90" height="90" fill="var(--superficie-cancha)" stroke="var(--linea-cancha)" stroke-width="0.5"/>`;
+  s += `<line x1="30" y1="0" x2="30" y2="90" stroke="var(--linea-cancha)" stroke-width="0.35" opacity="0.7"/>`;
+  s += `<line x1="0" y1="-7" x2="0" y2="97" stroke="var(--texto-2)" stroke-width="1.2"/>`;
+  const destino = (y, dir) => {
+    const arriba = y < 45, abajo = y > 45;
+    if (dir === 'calle') return [80, arriba ? 8 : abajo ? 82 : 45];
+    if (dir === 'diago') return [80, arriba ? 82 : 8];
+    return [26, arriba ? 84 : 6];
+  };
+  const grupos = [];
+  for (const z of ['Z4', 'Z3', 'Z2', 'Z1', 'Z6', 'Z5']) {
+    for (const dir of ['calle', 'diago', 'diago corta']) {
+      const l = rem.filter((j) => j.zona === z && j.dir === dir);
+      // Solo las combinaciones que pesan (≥ 5 %), para que la cancha se lea
+      if (l.length && l.length / rem.length >= 0.05) grupos.push({ z, dir, l });
+    }
+  }
+  const max = Math.max(0, ...grupos.map((g) => g.l.length));
+  grupos.sort((a, b) => a.l.length - b.l.length).forEach(({ z, dir, l }) => {
+    const origen = [['Z5', 'Z6', 'Z1'].includes(z) ? -14 : -6, ORIGEN_Y[z]];
+    const tipo = armadaPredominante(l);
+    const p100 = (100 * l.length) / rem.length;
+    s += `<path d="${curva(origen, destino(origen[1], dir), 5, 1)}" fill="none" stroke="var(${ARMADAS[tipo].variable})" stroke-width="${(0.5 + p100 * 0.085).toFixed(2)}" ` +
+      `stroke-linecap="round" opacity="${l.length === max ? 1 : 0.5}" marker-end="url(#${id}-${tipo})"/>`;
+  });
+  return `<svg viewBox="-18 -9 116 106">${s}</svg>`;
+}
+
+function mezcla(lista, clave, nombres, limite = 3) {
+  const c = {};
+  for (const x of lista) if (x[clave] != null) c[x[clave]] = (c[x[clave]] || 0) + 1;
+  const total = Object.values(c).reduce((a, b) => a + b, 0);
+  return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, limite)
+    .map(([k, v], i) => `${i === 0 ? '<b>' : ''}${esc(nombres(k))} ${txtPct(pct(v, total))}${i === 0 ? '</b>' : ''}`).join(', ') || '—';
+}
+
+// Datos por jugador (para fichas, PDF y comparar)
+function resumenJugadores(d) {
+  const ataques = filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque && j.jugador != null);
+  const recs = filtrar(d.recepciones, 'recepciones').filter((r) => r.jugador != null);
+  const nums = [...new Set([...ataques.map((j) => j.jugador), ...recs.map((r) => r.jugador)])];
+  return nums.map((num) => {
+    const a = ataques.filter((j) => j.jugador === num), r = recs.filter((x) => x.jugador === num);
+    return { num, ataques: a, recepciones: r, acciones: a.length + r.length };
+  }).filter((x) => x.acciones >= MIN_ACCIONES_FICHA)
+    .sort((x, y) => y.ataques.length - x.ataques.length || y.acciones - x.acciones);
+}
+
+function vistaJugadores(d) {
+  const lista = resumenJugadores(d);
+  if (!lista.length) return `<p class="stats-nota">Todavía no hay jugadores con ${MIN_ACCIONES_FICHA} o más acciones asignadas con estos filtros. Asigna jugadores con N y el número (o el menú «Jugador» en la cancha).</p>`;
+  const nombreZona = (z) => z;
+  const fichas = lista.map(({ num, ataques, recepciones }) => {
+    const eq = equipoStats();
+    const pj = eq && eq.plantel.find((x) => x.num === num);
+    const r = resumenAtaques(ataques);
+    const golpes = mezcla(ataques, 'golpe', (g) => (g === 'remate' ? 'remate' : GOLPES[g].corto));
+    const n = recepciones.length;
+    const k = (c) => recepciones.filter((x) => x.pase === c).length;
+    const barra = n ? `<div class="barra-calif chica">${CALIFS.map((c) => (k(c) ? `<span class="seg ${CALIF[c].clase}" style="flex:${k(c)}" title="${c}: ${k(c)}">${c}</span>` : '')).join('')}</div>` : '';
+    return `<div class="ficha-jugador" data-fijar='${JSON.stringify({ jugador: num })}' title="Clic: filtrar ${esc(etiquetaJugador(num))}">` +
+      `<div class="fj-cab"><b>${esc(etiquetaJugador(num))}</b>${pj && pj.pos ? `<span>${esc(POSICIONES[pj.pos].nombre.toLowerCase())}</span>` : ''}` +
+      `<span class="n">${ataques.length} ataques${n ? `, ${n} recepciones` : ''}</span></div>` +
+      (ataques.length ? canchaJugador(ataques) : '') +
+      (ataques.length ? `<dl>` +
+        `<dt>Desde</dt><dd>${mezcla(ataques, 'zona', nombreZona)}</dd>` +
+        `<dt>Armadas</dt><dd>${mezcla(ataques, 'armada', (t) => ARMADAS[t].corto)}</dd>` +
+        `<dt>Golpe</dt><dd>${golpes}</dd>` +
+        `<dt>Resultado</dt><dd>punto ${txtPct(pct(r.pts, r.conRes))}, error + bloq. ${txtPct(pct(r.malos, r.conRes))}</dd></dl>` : '') +
+      (n ? `<div class="fj-rec"><span>Recepción</span>${barra}<span class="tenue">${txtPct(pct(k('#') + k('+'), n))} positiva</span></div>` : '') +
+      `</div>`;
+  }).join('');
+  return `<p class="stats-nota">Jugadores con ${MIN_ACCIONES_FICHA} o más acciones asignadas, ordenados por cantidad de ataques. Flechas: hacia dónde ataca desde cada zona (grosor = %, color = armada más frecuente).</p>` +
+    `<div class="fichas-jugadores">${fichas}</div>`;
+}
+
+// ---------- Comparar grupos (set, momento o partido) ----------
+
+function gruposComparar(d) {
+  const dim = stats.comparar || 'set';
+  if (dim === 'momento') return Object.entries(MOMENTOS).map(([k, t]) => ({ t, f: (x) => x.momento === k }));
+  if (dim === 'partido') {
+    const conDatos = new Set(filtrar(d.jugadas, 'jugadas').map((j) => j.pid));
+    return partidosIncluidos().filter((x) => conDatos.has(x.id)).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')).slice(0, 4).map((x) => ({ t: `${fmtFecha(x.fecha).replace(/ \d{4}$/, '')} vs ${rivalDe(x)}`, f: (j) => j.pid === x.id }));
+  }
+  const sets = [...new Set(filtrar(d.jugadas, 'jugadas').map((j) => j.set))].sort((a, b) => a - b).slice(0, 4);
+  return sets.map((n) => ({ t: `Set ${n}`, f: (x) => x.set === n }));
+}
+
+function vistaComparar(d) {
+  const dim = stats.comparar || 'set';
+  const selector = `<div class="seg-grupo"><span class="etiqueta">Comparar por</span><div class="segmento">` +
+    [['set', 'Set'], ['momento', 'Momento'], ['partido', 'Partido']].map(([k, t]) =>
+      `<button data-comparar="${k}" class="${dim === k ? 'activo' : ''}">${t}</button>`).join('') + `</div></div>`;
+  const grupos = gruposComparar(d);
+  if (grupos.length < 2) return selector + '<p class="stats-nota">Hacen falta al menos 2 grupos con datos para comparar (por ejemplo, 2 sets o 2 partidos).</p>';
+  const js = filtrar(d.jugadas, 'jugadas');
+  const rs = filtrar(d.rallies, 'rallies');
+  const datos = grupos.map((g) => {
+    const jg = js.filter(g.f);
+    const normales = jg.filter((j) => !ARMADAS[j.armada].especial);
+    const rem = jg.filter((j) => j.ataque && j.golpe === 'remate' && j.dir);
+    const rg = rs.filter(g.f);
+    return { ...g, n: jg.length, normales, rem, rallies: rg, reparto: repartoAtaques(jg), poco: jg.length < MIN_JUGADAS_GRUPO };
+  });
+  // Filas: [etiqueta, función que da el % de un grupo (o null)]
+  const filas = [];
+  filas.push({ titulo: 'Distribución del armador' });
+  for (const z of ORDEN_ZONAS) filas.push({ t: z, v: (g) => (g.normales.length ? (100 * g.normales.filter((j) => j.zona === z).length) / g.normales.length : null) });
+  filas.push({ titulo: 'Dirección de ataque (remates)' });
+  for (const dir of ['calle', 'diago', 'diago corta']) filas.push({ t: NOMBRE_DIR[dir], v: (g) => (g.rem.length ? (100 * g.rem.filter((j) => j.dir === dir).length) / g.rem.length : null) });
+  filas.push({ titulo: 'Side-out' });
+  filas.push({ t: 'Side-out', v: (g) => (g.rallies.length ? (100 * g.rallies.filter((r) => r.sideOut).length) / g.rallies.length : null) });
+  filas.push({ titulo: '¿A quién le arman?' });
+  const totalReparto = repartoAtaques(js.filter((j) => datos.some((g) => g.f(j))));
+  Object.keys(totalReparto.porJugador).map(Number).sort((a, b) => totalReparto.porJugador[b] - totalReparto.porJugador[a]).slice(0, 5)
+    .forEach((num) => filas.push({ t: etiquetaJugador(num), v: (g) => (g.reparto.n ? (100 * (g.reparto.porJugador[num] || 0)) / g.reparto.n : null) }));
+
+  const cuerpo = filas.map((f) => {
+    if (f.titulo) return `<tr class="sub"><th colspan="${datos.length + 1}">${f.titulo}</th></tr>`;
+    const valores = datos.map((g) => f.v(g));
+    const validos = datos.map((g, i) => (!g.poco && valores[i] != null ? valores[i] : null)).filter((v) => v != null);
+    const max = Math.max(...validos), min = Math.min(...validos);
+    const destacar = validos.length >= 2 && max - min >= DIFERENCIA_DESTACADA;
+    return `<tr><th>${esc(f.t)}</th>${valores.map((v, i) => {
+      if (v == null) return '<td class="poco">—</td>';
+      const r = Math.round(v);
+      const marca = destacar && !datos[i].poco && (v === max ? ' ▲' : v === min ? ' ▼' : '');
+      return `<td class="${datos[i].poco ? 'poco' : marca ? 'dif' : 'clave'}">${txtPct(r)}${marca || ''}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
+  return selector +
+    `<table class="tabla tabla-comparar"><tr><th></th>${datos.map((g) => `<th>${esc(g.t)}<span class="n">${g.n} jugadas${g.poco ? ', pocos datos' : ''}</span></th>`).join('')}</tr>${cuerpo}</table>` +
+    `<p class="stats-nota">▲ ▼ diferencias de ${DIFERENCIA_DESTACADA} puntos o más entre grupos. Grupos con menos de ${MIN_JUGADAS_GRUPO} jugadas: tenues («pocos datos»). Los filtros generales aplican a todos los grupos.</p>`;
+}
+
 // ---------- Lista de jugadas y video lateral ----------
 
 const DURACION_CLIP = 8; // segundos que se reproduce cada clip con «Seguir solo»
@@ -2785,7 +3099,8 @@ function listaClips(d) {
 function filaClip(c, tipo, i) {
   let det = '', res = '';
   if (tipo === 'jugadas') {
-    det = `${muestra(c.armada)}<span>${ARMADAS[c.armada].corto} · ${c.zona}</span>` + (c.pase ? califBadge(c.pase) : '');
+    det = `${muestra(c.armada)}<span>${ARMADAS[c.armada].corto} · ${c.zona}</span>` + (c.pase ? califBadge(c.pase) : '') +
+      (c.jugador != null ? `<span class="calc">${esc(etiquetaJugador(c.jugador))}</span>` : '');
     res = c.resultado ? RESULTADOS[c.resultado].nombre : c.ataque ? '…' : 'sin ataque';
   } else if (tipo === 'recepciones') {
     det = `${califBadge(c.pase)}<span>${CALIF[c.pase].nombre}</span>`;
@@ -2870,6 +3185,8 @@ function unidadesVista(d) {
   // Equipo: armadas del armador (sin emergencia ni segunda), igual que las frases y la distribución
   const normales = (l) => l.filter((j) => !ARMADAS[j.armada].especial);
   if (stats.vista === 'equipo') return [normales(filtrar(d.jugadas, 'jugadas')).length, normales(d.jugadas).length, 'armadas'];
+  if (stats.vista === 'jugadores') return [resumenJugadores(d).length, resumenJugadores(d).length, 'jugadores con ficha'];
+  if (stats.vista === 'comparar') return [filtrar(d.jugadas, 'jugadas').length, d.jugadas.length, 'jugadas'];
   if (stats.vista === 'ataque') return [filtrar(d.jugadas, 'jugadas').filter((j) => j.ataque).length, d.jugadas.filter((j) => j.ataque).length, 'ataques'];
   if (stats.vista === 'sideout') return [filtrar(d.rallies, 'rallies').length, d.rallies.length, `rallies recibiendo`];
   return [filtrar(d.todos, 'todos').length, d.todos.length, 'rallies'];
@@ -2887,7 +3204,7 @@ function renderStats() {
   const [n, total, unidad] = unidadesVista(d);
   const filtrosTxt = textoFiltrosActivos(d);
   $('stats-resumen').textContent = `${nombre(p.scouteado, p)}${filtrosTxt.length ? ', ' + filtrosTxt.join(', ') : ''} · ${n === total ? n : `${n} de ${total}`} ${unidad}`;
-  const vistas = { equipo: vistaEquipo, ataque: vistaAtaqueV2, sideout: vistaSideoutRecepcion, saque: vistaSaque };
+  const vistas = { equipo: vistaEquipo, jugadores: vistaJugadores, ataque: vistaAtaqueV2, sideout: vistaSideoutRecepcion, saque: vistaSaque, comparar: vistaComparar };
   const cont = $('stats-contenido');
   const scroll = cont.scrollTop;
   cont.innerHTML = vistas[stats.vista](d);
@@ -2976,6 +3293,8 @@ function conectarStats() {
     }
     const tab = t.closest('[data-vistastats]');
     if (tab) { stats.vista = tab.dataset.vistastats; ui.clipsOverride = null; ui.clipIdx = null; renderStats(); return; }
+    const cmp = t.closest('[data-comparar]');
+    if (cmp) { stats.comparar = cmp.dataset.comparar; renderStats(); return; }
     const mapa = t.closest('[data-mapa]');
     if (mapa) { stats.mapa = mapa.dataset.mapa; renderStats(); return; }
     const pleg = t.closest('[data-pleg]');
@@ -3047,6 +3366,9 @@ document.addEventListener('keydown', (ev) => {
   }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
 
+  if (ui.modo === 'captura' && !ev.repeat && (k === TECLAS.jugador || ui.entradaJugador)) {
+    if (manejarTeclaJugador(k)) { ev.preventDefault(); return; }
+  }
   if (k === TECLAS.reproducir) { ev.preventDefault(); if (!ev.repeat) Video.alternar(); return; }
   if (k === TECLAS.atras) { ev.preventDefault(); Video.mover(ev.shiftKey ? -SALTO_LARGO_SEGUNDOS : -SALTO_SEGUNDOS); return; }
   if (k === TECLAS.adelante) { ev.preventDefault(); Video.mover(ev.shiftKey ? SALTO_LARGO_SEGUNDOS : SALTO_SEGUNDOS); return; }

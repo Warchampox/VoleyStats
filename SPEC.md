@@ -116,6 +116,10 @@ Emergencia y segunda no cuentan en la distribución del armador: van aparte.
 
 Números de camiseta cargados a mano mientras se ve el video. Nombres opcionales para equipos conocidos, reutilizables entre partidos.
 
+**Jugadores identificados:** el plantel del equipo es la referencia. En todo el sitio (tablas, filtros, clips, fichas y PDF) un jugador se muestra como «#7 Pérez», o «#7» si no tiene nombre. Entre partidos del mismo equipo, un número es un mismo jugador.
+
+**Asignar jugador rápido:** N y el número (1 o 2 dígitos; Enter o 0,6 s de espera confirman) asigna el jugador a la última recepción, defensa o ataque del rally en pantalla. N y N otra vez lo quita. Aviso breve: «#9 Pérez asignado al ataque». Se deshace con Ctrl+Z. En el paso Resultado aparece una sugerencia «¿#9?» (el jugador más frecuente en la misma rotación y zona de ataque en rallies anteriores del equipo); N y Enter la aceptan. Nunca se asigna solo. El menú «Jugador» con el mouse sigue igual.
+
 ### Comodidad
 
 - Teclas para el video: pausa, retroceder y avanzar unos segundos.
@@ -175,15 +179,20 @@ La salida central es la distribución del armador según la rotación y la calid
 | Mapa de ataque por zona | Hacia dónde ataca cada zona: diago, diago corta, calle, toques; mapa de calor de impactos |
 | Side-out por rotación | En qué rotaciones el equipo sufre o rinde al recibir |
 | Eficiencia de recepción | Distribución de calificaciones de recepción del equipo |
+| Jugadores | Ficha por jugador con 5 o más acciones asignadas, ordenadas por ataques: mini cancha con flechas por zona y dirección (grosor = %), zonas, tipos de armada, golpe, resultado (punto y error + bloqueado) y recepción |
+| ¿A quién le arman? (en Equipo) | Reparto de los ataques entre jugadores (% del total con jugador asignado): todo, con pase malo (! -) y final de set; resaltado el más buscado de cada columna |
+| Comparar | Por set, momento o partido (2 a 4 grupos), lado a lado: distribución del armador por zona, dirección de ataque, side-out y a quién le arman. Diferencias de 15 puntos o más destacadas; grupos con menos de 8 jugadas tenues («pocos datos») |
 | Saque y bloqueo | Aces y errores de saque de cada equipo, y puntos de bloqueo del equipo scouteado, por set y por rotación |
 
-**Filtros combinables:** set, rotación, calidad de pase (recepción o defensa), tipo de armada, zona, tipo de golpe, resultado, fase (recepción, contra, cobertura, libre), jugador.
+**Momento del set (calculado, no se guarda):** según el mayor de los dos marcadores antes del rally. Inicio 0–9, Medio 10–19, Final 20 o más; en el 5.º set 0–4, 5–9 y 10 o más.
+
+**Filtros combinables:** set, rotación, momento (Todo · Inicio · Medio · Final), calidad de pase (recepción o defensa), tipo de armada, zona, tipo de golpe, resultado, fase (recepción, contra, cobertura, libre), jugador.
 
 **Lista de clips:** cada filtro produce una lista de jugadas; un click salta al segundo exacto del video.
 
-**Resumen en PDF:** desde Estadísticas, un resumen de 2 páginas A4 para compartir (por ejemplo, por WhatsApp), con el mismo alcance y filtros de la pantalla: encabezado con partidos y resultados, indicadores (side-out, recepción positiva, eficacia de ataque, punto en el 1er ataque), distribución del armador, cancha con las armadas, ataque por zona con trayectorias, side-out y recepción. Se genera con el diálogo de impresión del navegador («Guardar como PDF»).
+**Resumen en PDF:** desde Estadísticas, un resumen de 2 páginas A4 para compartir (por ejemplo, por WhatsApp), con el mismo alcance y filtros de la pantalla: encabezado con partidos y resultados, indicadores (side-out, recepción positiva, eficacia de ataque, punto en el 1er ataque), distribución del armador, cancha con las armadas, ataque por zona con trayectorias, side-out, recepción, «¿A quién le arman?» y, si hay jugadores con ficha, una tabla compacta por jugador (zonas, dirección dominante, golpe). Se genera con el diálogo de impresión del navegador («Guardar como PDF»).
 
-Estadísticas por jugador quedan como extra si salen fáciles del mismo modelo. Las vistas se irán ajustando con el uso.
+Las vistas se irán ajustando con el uso.
 
 ## Fases
 
