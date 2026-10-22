@@ -1,0 +1,10 @@
+interface:
+  display_name: "Taste"
+  short_description: "Domain-grounded judgment for creating and critiquing work"
+  icon_small: "./assets/taste-icon.svg"
+  icon_large: "./assets/taste-icon.svg"
+  brand_color: "#D9B26F"
+  default_prompt: "Use $taste: ground in the real exemplar, keep every specific sourced, and finish to the stakes."
+
+policy:
+  allow_implicit_invocation: true

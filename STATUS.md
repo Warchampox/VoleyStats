@@ -350,5 +350,11 @@ Reemplaza la dirección «Cabina». Solo estilos y tipografía; lógica, layout 
   N Enter acepta la sugerencia, N 1 1, N 9 con espera, N N quita, Ctrl+Z; comparar por set, momento y partido.
 - `?v=25`.
 
+## Auditoría de diseño (2026-10-22)
+
+- Skills de diseño en `.claude/skills/`: taste completa e impeccable solo con instrucciones (sin el lanzador
+  que descarga un binario ni sus hooks; ver `.claude/skills/LEEME.md`).
+- Informe en `docs/auditoria-2026-10-22.md` con capturas en `docs/auditoria/`. No se cambió el sitio.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).
