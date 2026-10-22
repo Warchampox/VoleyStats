@@ -760,6 +760,8 @@ function deshacer() {
 
 function avisar(texto) {
   ui.aviso = { texto, hasta: Date.now() + 2500 };
+  const vivo = $('aviso-vivo');
+  if (vivo) vivo.textContent = texto;
   const pintar = () => (ui.modo === 'stats' ? renderAvisoStats() : renderEstado());
   pintar();
   setTimeout(pintar, 2600);
@@ -1567,7 +1569,7 @@ function renderAyuda() {
     fila(['Ctrl+Z'], 'Deshacer el último paso') +
     fila([nombreTecla(T.nuevoRally)], 'Rally nuevo en el segundo actual') +
     fila([nombreTecla(T.cerrarSinAtaque)], 'Cerrar rally sin ataque') +
-    fila([nombreTecla(T.jugador), '7'], 'Jugador a la última recepción, defensa o ataque (N N quita)') +
+    fila([nombreTecla(T.jugador), '7'], 'Jugador a la última acción (N N quita)') +
     fila(['Esc'], 'Volver un paso de clic') +
     fila([nombreTecla(T.foco)], 'Modo foco') +
     `<div class="ayuda-pie">Las teclas del paso actual están siempre en «Ahora».</div>`;
@@ -1977,6 +1979,16 @@ function renderSonido() {
   b.title = Video.mudo ? 'Activar sonido (M)' : 'Silenciar (M)';
 }
 
+// Reparto de la captura: normal o con la cancha ampliada (columna derecha más ancha, video más chico)
+function aplicarCanchaAmplia() {
+  const on = !!prefs.canchaAmplia;
+  document.body.classList.toggle('cancha-amplia', on);
+  const b = $('btn-ampliar');
+  b.classList.toggle('activo', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Volver al reparto normal (video más grande)' : 'Más espacio para la cancha; el video se achica';
+}
+
 function alternarSilencio() {
   Video.silenciar(!Video.mudo);
   prefs.silencio = Video.mudo;
@@ -2204,6 +2216,12 @@ function resumenAtaques(lista) {
 
 function txtEficacia(ef) { return ef == null ? '—' : (ef > 0 ? '+' : '') + ef + ESPACIO_FINO + '%'; }
 
+// Regla «pocos datos»: con menos de MIN_MUESTRA casos, el valor va tenue y marcado (pantalla y PDF)
+const MIN_MUESTRA = 15;
+function conMuestra(texto, n) {
+  return n > 0 && n < MIN_MUESTRA ? `<span class="poco-dato">${texto} (pocos datos)</span>` : texto;
+}
+
 // Indicadores generales con los filtros activos
 function indicadores(d) {
   const rallies = filtrar(d.rallies, 'rallies');
@@ -2243,7 +2261,11 @@ function tablaZonas(filas, titulo) {
 
 function canchaMini(contenido, p) {
   const otroTexto = partidosIncluidos().length > 1 ? 'rivales' : null;
-  return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p, otroTexto)}${contenido}</svg>`;
+  const id = `cm${++idSvg}`;
+  // El dibujo se recorta bajo la línea de títulos: nada tapa «ataca →» ni el nombre del rival
+  return `<svg class="cancha-mini" viewBox="0 0 220 130">${baseCancha(p, otroTexto)}` +
+    `<defs><clipPath id="${id}"><rect x="0" y="14" width="220" height="116"/></clipPath></defs>` +
+    `<g clip-path="url(#${id})">${contenido}</g></svg>`;
 }
 
 function partesArmador(d, p) {
@@ -2299,7 +2321,7 @@ function partesAtaque(d, p, mapaModo) {
       `<td class="num tenue">${r.n}</td>${dirPct('calle')}${dirPct('diago')}${dirPct('diago corta')}` +
       `<td class="num">${toques ? txtPct(pct(toques, r.n)) : '·'}</td>` +
       `<td class="num">${txtPct(pct(r.pts, r.conRes))}</td><td class="num">${txtPct(pct(r.malos, r.conRes))}</td>` +
-      `<td class="num"><b>${txtEficacia(r.ef)}</b></td></tr>`;
+      `<td class="num"><b>${conMuestra(txtEficacia(r.ef), r.n)}</b></td></tr>`;
   };
   const filas = ORDEN_ZONAS.map((z) => fila(z, js.filter((j) => j.zona === z), { zona: z })).join('') + fila('Total', js, {});
   let mapa;
@@ -2324,6 +2346,9 @@ function partesAtaque(d, p, mapaModo) {
     n: js.length,
     tabla: `<table class="tabla"><tr><th>Zona</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Toque</th><th>Punto</th><th>Err+Bl</th><th>Efic.</th></tr>${filas}</table>`,
     cancha: canchaMini(mapa, p),
+    // Flechas agregadas por zona y dirección, como en la pestaña Ataque
+    tarjetas: ORDEN_ZONAS.map((z) => ({ z, l: js.filter((j) => j.zona === z) })).filter((x) => x.l.length)
+      .map(({ z, l }) => tarjetaZona(z, l)).join(''),
   };
 }
 
@@ -2406,7 +2431,7 @@ function partesSaque(d, p) {
 
 function vistaSideout(d) {
   const a = partesSideout(d);
-  return `<p class="stats-nota">Rallies en que el ${esc(nombre(partidoRef().scouteado, partidoRef()))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
+  return `<p class="stats-nota">Rallies en que ${esc(nombre(partidoRef().scouteado, partidoRef()))} recibe. «1er ataque» = punto directo en el primer ataque tras la recepción.</p>` +
     `<h3>Por rotación</h3>${a.porRot}` +
     `<h3>Por calidad de pase</h3>${a.porPase}`;
 }
@@ -2464,6 +2489,9 @@ function lineaPartido(x) {
 }
 
 // Tabla compacta por jugador para el PDF
+// Sobre esta cantidad de ataques, el PDF usa flechas agregadas en vez de una línea por ataque
+const MAX_TRAYECTORIAS_PDF = 40;
+
 function tablaJugadoresPdf(d) {
   const lista = resumenJugadores(d).filter((x) => x.ataques.length);
   if (!lista.length) return '';
@@ -2505,7 +2533,7 @@ function htmlResumen(d, partidos) {
     `<div class="r-kpis">` +
     kpi(txtPct(k.sideOut), 'Side-out', `${k.rallies} rallies recibiendo`) +
     kpi(txtPct(k.recPositiva), 'Recepción positiva (# +)', `${k.recepciones} recepciones`) +
-    kpi(txtEficacia(k.eficacia), 'Eficacia de ataque', `${k.ataques} ataques`) +
+    kpi(conMuestra(txtEficacia(k.eficacia), k.ataques), 'Eficacia de ataque', `${k.ataques} ataques`) +
     kpi(txtPct(k.primerAtaque), 'Punto en 1er ataque', 'tras recepción') +
     `</div>` +
     `<section class="r-sec"><h2>Distribución del armador <span>${arm.n} armadas (sin emergencia ni segunda) · % de cada fila por zona de ataque</span></h2>` +
@@ -2518,7 +2546,9 @@ function htmlResumen(d, partidos) {
     `</div>` +
     `<div class="hoja salto">` +
     `<section class="r-sec"><h2>Ataque por zona <span>${atq.n} ataques; dirección sobre remates; eficacia = (puntos − errores − bloqueos) / ataques con resultado</span></h2>` +
-    `${atq.tabla}<div class="r-cancha chica">${atq.cancha}</div>${leyendaResultados()}</section>` +
+    `${atq.tabla}` + (atq.n > MAX_TRAYECTORIAS_PDF
+      ? `<div class="r-tarjetas">${atq.tarjetas}</div><p class="r-nota">Flechas agregadas por zona de origen: grosor = % de los remates, color = armada más frecuente. Con menos de 15 ataques en una zona, trayectorias una a una.</p>`
+      : `<div class="r-cancha chica">${atq.cancha}</div>${leyendaResultados()}`) + `</section>` +
     `<section class="r-sec"><h2>Side-out <span>rallies en que ${esc(scoutNom)} recibe · 1er ataque = punto directo tras la recepción</span></h2>` +
     `<div class="r-2col"><div><h3>Por rotación</h3>${so.porRot}</div><div><h3>Por calidad de pase</h3>${so.porPase}</div></div></section>` +
     `<section class="r-sec"><h2>Recepción <span>${rec.n} recepciones</span></h2>${rec.barra}` +
@@ -2831,12 +2861,14 @@ function tarjetaZona(z, lista) {
       const fin = destino(x);
       s += `<path d="${curva(origen, fin, 5, 1)}" fill="none" stroke="var(${ARMADAS[tipo].variable})" stroke-width="${(0.5 + p100 * 0.085).toFixed(2)}" ` +
         `stroke-linecap="round" opacity="${mayor ? 1 : 0.42}" marker-end="url(#${id}-${tipo})"/>`;
-      s += `<text x="${Math.min(fin[0], 84)}" y="${fin[1] < 45 ? fin[1] + 9 : fin[1] - 5}" font-size="5.6" text-anchor="end" ` +
+      s += `<text x="${Math.min(fin[0], 84)}" y="${fin[1] < 45 ? fin[1] + 10 : fin[1] - 6}" font-size="6.2" text-anchor="end" ` +
         `fill="var(${mayor ? '--texto' : '--texto-3'})" font-weight="${mayor ? 600 : 400}">${NOMBRE_DIR[x]} ${txtPct(Math.round(p100))}</text>`;
     });
   } else {
     for (const j of lista) {
-      const [x, y] = aRival(j.ataque.punto);
+      // Los impactos fuera de la cancha se dibujan en el borde de la caja, sin salirse
+      const [x0, y0] = aRival(j.ataque.punto);
+      const x = Math.min(x0, 96), y = Math.max(-7, Math.min(95, y0));
       const color = `var(${ARMADAS[j.armada].variable})`;
       s += `<line x1="${origen[0]}" y1="${origen[1]}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="0.9"/>`;
       s += esPuntoDeAtaque(j.resultado)
@@ -2846,7 +2878,7 @@ function tarjetaZona(z, lista) {
   }
   s += `<circle cx="${origen[0]}" cy="${origen[1]}" r="2.6" fill="var(--fondo)" stroke="var(--texto)" stroke-width="1.1"/>`;
   return `<div class="tarjeta" data-fijar='${JSON.stringify({ zona: z })}' title="Clic: filtrar ${z}">` +
-    `<div class="cab"><b>${z}</b>n=${lista.length}<span class="efic">efic. ${txtEficacia(r.ef)}</span></div>` +
+    `<div class="cab"><b>${z}</b>n=${lista.length}<span class="efic">efic. ${conMuestra(txtEficacia(r.ef), lista.length)}</span></div>` +
     `<svg viewBox="-18 -9 116 106">${s}</svg>` +
     `<div class="pie">${agregado ? 'agregado' : 'n<15 · relleno = punto'}</div></div>`;
 }
@@ -2866,7 +2898,7 @@ function tablaAtaque(filas, titulo) {
       dir.map((v) => `<td class="${v && v === maxDir ? 'max' : ''}">${num(v, rem.length)}</td>`).join('') +
       `<td>${num(r.pts, conRes.length)}</td><td>${num(n((j) => j.resultado === 'error'), conRes.length)}</td>` +
       `<td>${num(n((j) => j.resultado === 'bloqueado'), conRes.length)}</td>` +
-      `<td class="clave">${r.ef == null ? '—' : (r.ef > 0 ? '+' : '') + r.ef}</td></tr>`;
+      `<td class="clave">${conMuestra(r.ef == null ? '—' : (r.ef > 0 ? '+' : '') + r.ef, lista.length)}</td></tr>`;
   };
   return `<table class="tabla"><tr><th>${titulo}</th><th>n</th><th>Calle</th><th>Diago</th><th>D. corta</th><th>Punto</th><th>Error</th><th>Bloq.</th><th>Efic.</th></tr>` +
     filas.map(fila).join('') + `</table>`;
@@ -2891,7 +2923,7 @@ function vistaAtaqueV2(d) {
     : '<p class="stats-nota">Asigna jugadores a los ataques (menú «Jugador» en la cancha) para ver esta tabla.</p>';
   const impactos = partesAtaque(d, partidoRef(), stats.mapa);
   return `<div class="ataque-resumen"><div class="barra-dir">${barra}</div><div class="dir-textos">${textos}</div>` +
-    `<div class="efic-total">Eficacia <b>${txtEficacia(r.ef)}</b></div></div>` +
+    `<div class="efic-total">Eficacia <b>${conMuestra(txtEficacia(r.ef), r.n)}</b></div></div>` +
     `<div class="bloque-titulo">Dirección por zona de origen<span>grosor = % · con menos de 15 jugadas se ven las trayectorias una a una</span></div>` +
     `<div class="tarjetas-ataque">${zonas.map(({ z, l }) => tarjetaZona(z, l)).join('')}</div>` +
     `<div class="dos-col"><div><div class="bloque-titulo">Eficacia por zona</div>${tablaAtaque(porZona, 'Zona')}</div>` +
@@ -2998,7 +3030,16 @@ function vistaJugadores(d) {
   const lista = resumenJugadores(d);
   if (!lista.length) return `<p class="stats-nota">Todavía no hay jugadores con ${MIN_ACCIONES_FICHA} o más acciones asignadas con estos filtros. Asigna jugadores con N y el número (o el menú «Jugador» en la cancha).</p>`;
   const nombreZona = (z) => z;
-  const fichas = lista.map(({ num, ataques, recepciones }) => {
+  const sinAtaques = lista.filter((x) => !x.ataques.length);
+  const filasSinAtaques = sinAtaques.map(({ num, recepciones }) => {
+    const eq = equipoStats();
+    const pj = eq && eq.plantel.find((x) => x.num === num);
+    const pos = recepciones.filter((x) => x.pase === '#' || x.pase === '+').length;
+    return `<div class="fila-jugador clic" data-fijar='${JSON.stringify({ jugador: num })}' title="Clic: filtrar ${esc(etiquetaJugador(num))}">` +
+      `<b>${esc(etiquetaJugador(num))}</b>${pj && pj.pos ? `<span>${esc(POSICIONES[pj.pos].nombre.toLowerCase())}</span>` : ''}` +
+      `<span>${recepciones.length} recepciones, ${conMuestra(txtPct(pct(pos, recepciones.length)), recepciones.length)} positiva</span></div>`;
+  }).join('');
+  const fichas = lista.filter((x) => x.ataques.length).map(({ num, ataques, recepciones }) => {
     const eq = equipoStats();
     const pj = eq && eq.plantel.find((x) => x.num === num);
     const r = resumenAtaques(ataques);
@@ -3019,7 +3060,8 @@ function vistaJugadores(d) {
       `</div>`;
   }).join('');
   return `<p class="stats-nota">Jugadores con ${MIN_ACCIONES_FICHA} o más acciones asignadas, ordenados por cantidad de ataques. Flechas: hacia dónde ataca desde cada zona (grosor = %, color = armada más frecuente).</p>` +
-    `<div class="fichas-jugadores">${fichas}</div>`;
+    `<div class="fichas-jugadores">${fichas}</div>` +
+    (filasSinAtaques ? `<div class="bloque-titulo">Sin ataques asignados</div><div class="filas-jugadores">${filasSinAtaques}</div>` : '');
 }
 
 // ---------- Comparar grupos (set, momento o partido) ----------
@@ -3115,9 +3157,10 @@ function filaClip(c, tipo, i) {
     res = c.sideOut ? 'Side-out' : 'Punto rival';
   }
   const varios = partidosIncluidos().length > 1;
-  const ref = `${varios ? fmtFecha(almacen.partidos[c.pid].fecha).replace(/ \d{4}$/, '') + ' ' : ''}S${c.set} R${c.rally}`;
+  // Con varios partidos la fecha va en su propia línea: «20 sept» arriba, «S1 R17» abajo
+  const ref = (varios ? `<small>${esc(fmtFecha(almacen.partidos[c.pid].fecha).replace(/ \d{4}$/, ''))}</small>` : '') + `S${c.set} R${c.rally}`;
   return `<div class="fila-clip${ui.clipIdx === i ? ' actual' : ''}" data-clip="${i}">` +
-    `<span class="ref">${esc(ref)}</span><span class="t">${fmtMinuto(c.t)}</span>` +
+    `<span class="ref">${ref}</span><span class="t">${fmtMinuto(c.t)}</span>` +
     `<span class="detalle">${det}</span><span class="res">${esc(res)}</span><span class="tenue">▶</span></div>`;
 }
 
@@ -3208,6 +3251,7 @@ function renderStats() {
   const cont = $('stats-contenido');
   const scroll = cont.scrollTop;
   cont.innerHTML = vistas[stats.vista](d);
+  cont.classList.toggle('ancho-limitado', stats.vista === 'equipo' || stats.vista === 'comparar');
   cont.scrollTop = scroll;
   if (ui.lateral) renderLateral(d);
 }
@@ -3346,9 +3390,13 @@ function esCampoTexto(el) {
 document.addEventListener('keydown', (ev) => {
   if (!$('modal').hidden) {
     if (ev.key === 'Escape' && modalCancelable) { ev.preventDefault(); cerrarModal(); }
+    if (ev.key === 'Tab') retenerFoco(ev);
     return;
   }
   if (esCampoTexto(ev.target)) return;
+  // Quien navega con Tab activa lo enfocado: Enter y Espacio no van a los atajos.
+  // (Tras un clic con mouse el control suelta el foco, así que esto solo pasa con teclado.)
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.closest && ev.target.closest('button, a[href], summary, input[type="checkbox"], input[type="radio"]')) return;
   const k = ev.key.toLowerCase();
 
   // Ayuda y menús primero: Esc solo los cierra
@@ -3395,9 +3443,14 @@ document.addEventListener('click', (ev) => {
 
 let modalCancelable = false;
 
+let focoPrevio = null;
+
 function abrirModal(html, cancelable) {
   modalCancelable = cancelable;
-  $('modal').innerHTML = `<div class="dialogo" role="dialog" aria-modal="true">${html}</div>`;
+  if ($('modal').hidden) focoPrevio = document.activeElement !== document.body ? document.activeElement : null;
+  $('modal').innerHTML = `<div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogo-titulo">${html}</div>`;
+  const h2 = $('modal').querySelector('h2');
+  if (h2) h2.id = 'dialogo-titulo';
   $('modal').hidden = false;
   const primero = $('modal').querySelector('input, select, button.principal');
   if (primero) primero.focus();
@@ -3406,6 +3459,19 @@ function abrirModal(html, cancelable) {
 function cerrarModal() {
   $('modal').hidden = true;
   $('modal').innerHTML = '';
+  if (focoPrevio && document.contains(focoPrevio)) focoPrevio.focus();
+  focoPrevio = null;
+}
+
+// Tab y Shift+Tab circulan dentro del diálogo abierto
+function retenerFoco(ev) {
+  const foco = [...$('modal').querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && el.offsetParent);
+  if (!foco.length) return;
+  const i = foco.indexOf(document.activeElement);
+  const sig = ev.shiftKey ? (i <= 0 ? foco.length - 1 : i - 1) : (i === -1 || i === foco.length - 1 ? 0 : i + 1);
+  ev.preventDefault();
+  foco[sig].focus();
 }
 
 function confirmar({ titulo, texto, aceptar = 'Aceptar', soloAceptar = false }) {
@@ -3593,10 +3659,11 @@ function elegirConflicto(x) {
       `<p class="tenue">Guardado: ${esc(resumenPartido(existente))}</p>` +
       `<label class="opcion"><input type="checkbox" id="c-todos"> Aplicar a todos los siguientes</label>` +
       `<div class="acciones"><button class="btn izq" data-r="omitir">Omitir</button>` +
-      `<button class="btn" data-r="copia">Guardar como copia</button>` +
-      `<button class="btn principal" data-r="reemplazar">Reemplazar</button></div>`,
+      `<button class="btn" data-r="reemplazar">Reemplazar</button>` +
+      `<button class="btn principal" data-r="copia">Guardar como copia</button></div>`,
       false,
     );
+    $('modal').querySelector('[data-r="omitir"]').focus();
     $('modal').querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => {
       const todos = $('c-todos').checked;
       cerrarModal();
@@ -3778,7 +3845,7 @@ function ralliesDe(x) { return x.sets.reduce((n, st) => n + st.rallies.filter((r
 function resumenPartido(x) {
   const g = setsGanados(x);
   const rallies = ralliesDe(x);
-  return `Scouteando ${nombre(x.scouteado, x)}, sets ${g[0]}–${g[1]}, ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
+  return `${nombre(x.scouteado, x)} scouteado, sets ${g[0]}–${g[1]}, ${rallies} ${rallies === 1 ? 'rally' : 'rallies'}`;
 }
 
 // Resultado por sets desde el punto de vista del equipo scouteado: «3–1 (25-20 22-25 …)»
@@ -4245,6 +4312,14 @@ function conectarEventos() {
   $('btn-cancelar-carga').addEventListener('click', () => { ui.cambiandoVideo = false; render(); });
   $('video-capa').addEventListener('click', () => Video.alternar());
   $('btn-sonido').addEventListener('click', alternarSilencio);
+  $('btn-ampliar').addEventListener('click', () => { prefs.canchaAmplia = !prefs.canchaAmplia; guardarPrefs(); aplicarCanchaAmplia(); });
+  aplicarCanchaAmplia();
+  // Tras un clic con mouse, el control suelta el foco: Enter sigue siendo «rally nuevo»
+  document.addEventListener('pointerup', (ev) => {
+    if (ev.pointerType !== 'mouse') return;
+    const c = ev.target.closest('button, input[type="checkbox"]');
+    if (c && !c.closest('#modal')) setTimeout(() => c.blur(), 0);
+  });
 
   $('btn-atras').addEventListener('click', () => Video.mover(-SALTO_SEGUNDOS));
   $('btn-adelante').addEventListener('click', () => Video.mover(SALTO_SEGUNDOS));

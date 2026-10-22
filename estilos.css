@@ -9,6 +9,10 @@
   --borde: #2D323E;
   --borde-control: #3A404E;
   --borde-fuerte: #4C5364;
+  /* Borde de campos y botones secundarios: ≥ 3:1 contra el fondo (WCAG 1.4.11) */
+  --borde-campo: #6B7385;
+  /* Captura: ancho de la columna derecha (marcador, «Ahora», cancha). ~520 px a 1280 */
+  --col-der: clamp(500px, 40.6vw, 600px);
   --tecla: #2E3340;
   --texto: #F3F4F6;
   --texto-2: #C3C8D2;
@@ -54,7 +58,7 @@
   --ficha-activa: #B7BDC5;
 
   /* Rojo de transmisión: SOLO línea del header, elementos activos y pestaña activa */
-  --tv: #E1251B;
+  --tv: #C81E16; /* 5,2:1 con texto claro (AA en los activos de 12–13 px) */
   /* Tinta del recuadro «Ahora» (panel claro tipo gráfica de TV) */
   --tinta: #14161C;
   --tinta-2: #2A2F3A;
@@ -98,7 +102,7 @@ button, input, select { font: inherit; color: inherit; }
   height: 32px;
   padding: 0 12px;
   background: transparent;
-  border: 1px solid var(--borde-control);
+  border: 1px solid var(--borde-campo);
   border-radius: var(--radio-boton);
   cursor: pointer;
   font-weight: 500;
@@ -206,7 +210,7 @@ body.modo-stats .solo-captura { display: none !important; }
   min-height: 560px;
   padding: 16px;
   gap: 10px 16px;
-  grid-template-columns: minmax(0, 1fr) 480px;
+  grid-template-columns: minmax(0, 1fr) var(--col-der);
   grid-template-rows: auto 36px 14px minmax(0, 1fr) 40px;
   grid-template-areas:
     "v   der"
@@ -226,7 +230,7 @@ body.modo-stats .solo-captura { display: none !important; }
 
 /* Lista de rallies anteriores abierta: el video se achica y la lista ocupa el resto */
 body.lista-abierta .cuerpo {
-  grid-template-columns: 704px minmax(0, 1fr) 480px;
+  grid-template-columns: minmax(0, 704px) minmax(0, 1fr) var(--col-der);
   grid-template-rows: 396px 36px 14px minmax(0, 1fr);
   grid-template-areas:
     "v   nota der"
@@ -242,6 +246,13 @@ body.lista-abierta .nota-revisando { display: flex; }
   /* Columnas fijas más angostas para que el resultado no se corte */
   body .fila-ant { grid-template-columns: 26px 44px 66px 26px 24px minmax(0, 1.25fr) minmax(0, 1fr) 66px 24px; gap: 8px; padding: 0 12px; }
 }
+
+/* «Ampliar cancha»: la columna derecha pasa a ~600 px a 1280 y el video se achica */
+body.cancha-amplia { --col-der: clamp(600px, 46.9vw, 720px); }
+/* La cancha está limitada por el alto: con la columna ancha, «Ahora» se compacta para darle alto */
+body.cancha-amplia .col-der { gap: 8px; }
+body.cancha-amplia .ahora { height: 226px; padding-top: 10px; }
+body.cancha-amplia .ahora-teclas { grid-auto-rows: 30px; margin-top: 6px; }
 
 .col-der { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
 
@@ -299,11 +310,11 @@ body.lista-abierta .video { width: 704px; height: 396px; }
 .campo {
   height: 32px; padding: 0 10px;
   background: var(--fondo);
-  border: 1px solid var(--borde-control);
+  border: 1px solid var(--borde-campo);
   border-radius: var(--radio-boton);
   outline: none;
 }
-.campo:focus { border-color: var(--linea-cancha); }
+.campo:focus { border-color: var(--texto); box-shadow: 0 0 0 1px var(--texto); }
 
 
 /* ---------- Controles de video: solo íconos, sin tecla impresa ---------- */
@@ -331,7 +342,11 @@ body.lista-abierta .video { width: 704px; height: 396px; }
 
 /* ---------- Historial del rally (tenue) ---------- */
 
-.historial { min-height: 0; overflow-y: auto; padding: 2px 0; }
+.historial { min-height: 0; overflow-y: auto; padding: 2px 0; mask-image: linear-gradient(to bottom, transparent 0, #000 10px); }
+@media (max-height: 760px) {
+  .hist-fila { height: 21px; }
+  .hist-cab { margin-bottom: 2px; }
+}
 .hist-cab { font-family: var(--sans); font-size: 12px; color: var(--texto-3); margin-bottom: 4px; }
 .hist-cab b { color: var(--texto-2); font-weight: 600; margin-right: 6px; }
 .hist-fila { display: grid; grid-template-columns: 86px 96px minmax(0, 1fr); align-items: center; gap: 10px; height: 24px; color: var(--texto-2); white-space: nowrap; }
@@ -414,8 +429,14 @@ body.lista-abierta .anteriores-lista { display: block; }
 
 /* ---------- Marcador ---------- */
 
-.marcador { height: 64px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
-.marcador-izq { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.marcador {
+  flex: none; display: grid; align-items: center; column-gap: 12px; row-gap: 0; padding: 0 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "sup der" "tanteo tanteo";
+}
+.marcador-izq { display: contents; }
+.marcador-sup { grid-area: sup; }
+.tanteo { grid-area: tanteo; }
 .marcador-sup { display: flex; align-items: center; gap: 6px; }
 .tanteo { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .tanteo .equipo { font-size: 15px; color: var(--texto-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -423,7 +444,7 @@ body.lista-abierta .anteriores-lista { display: block; }
 .tanteo .guion { color: var(--texto-3); font-family: var(--sans); font-size: 18px; flex: none; }
 .punto-saque { width: 7px; height: 7px; border-radius: 50%; background: var(--texto); display: inline-block; margin: 0 6px 2px 0; vertical-align: middle; }
 .punto-saque.oculto { display: none; }
-.marcador-der { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.marcador-der { grid-area: der; display: flex; align-items: center; gap: 10px; flex: none; }
 .chips { display: flex; gap: 6px; }
 .chips button {
   width: 28px; height: 24px; padding: 0;
@@ -450,7 +471,7 @@ body.lista-abierta .anteriores-lista { display: block; }
 .ahora-cab .atajos { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--texto-3); cursor: pointer; font-size: 12px; padding: 0; }
 .ahora-cab .atajos kbd { min-width: 20px; height: 20px; font-size: 12.5px; }
 .ahora-cab .atajos:hover { color: var(--texto); }
-.ahora h2 { margin: 2px 0 0; font-size: 28px; font-weight: 600; line-height: 1.2; display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.ahora h2 { margin: 2px 0 0; font-size: 28px; font-weight: 600; line-height: 1.2; display: flex; align-items: center; gap: 10px; overflow: hidden; max-height: 2.2em; text-wrap: balance; flex: none; }
 .ahora h2 svg { flex: none; }
 .ahora .contexto { margin: 2px 0 0; color: var(--texto-3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .ahora .contexto.aviso { color: var(--texto); }
@@ -492,7 +513,8 @@ body.lista-abierta .anteriores-lista { display: block; }
 .cancha-cab { height: 34px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 14px; }
 .cancha-acciones { display: flex; align-items: center; gap: 6px; }
 .cancha-cont { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0; }
-#cancha { width: 480px; max-width: 100%; height: auto; max-height: 100%; display: block; user-select: none; }
+/* La cancha usa todo el ancho que permita el alto disponible (el clic se mapea con getScreenCTM) */
+#cancha { width: 100%; height: 100%; display: block; user-select: none; }
 #cancha.clic { cursor: crosshair; }
 #cancha text { font-family: var(--sans); }
 .cancha-pie { height: 28px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 14px; font-size: 12px; }
@@ -545,6 +567,7 @@ body.foco .marcador, body.foco .cancha-pie, body.foco .leyenda { display: none; 
 body.foco .marcador-linea { display: block; }
 body.foco .col-der { align-self: center; }
 body.foco .ayuda { top: 60px; }
+body.foco .ahora h2 { font-size: 32px; }
 
 /* ---------- Estadísticas ---------- */
 
@@ -589,6 +612,9 @@ body.modo-stats.lateral .cuerpo::before { content: ""; grid-area: v; background:
   height: 30px; padding: 0 12px 0 16px; cursor: pointer; white-space: nowrap; font-size: 12.5px; color: var(--texto-2);
 }
 .fila-clip .ref, .fila-clip .t { font-family: var(--sans); color: var(--texto-3); font-size: 12px; }
+.fila-clip .ref { display: flex; flex-direction: column; line-height: 13px; white-space: nowrap; }
+.fila-clip .ref small { font-size: 12px; color: var(--texto-3); }
+.fila-clip:has(.ref small) { height: 36px; }
 .fila-clip .detalle { font-family: var(--sans); }
 .fila-clip .res { color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; }
 .fila-clip:hover { background: #1A1D22; }
@@ -614,6 +640,11 @@ body.modo-stats.lateral .cuerpo::before { content: ""; grid-area: v; background:
 .btn-mas { height: 32px; padding: 0 12px; background: none; border: 1px dashed var(--borde-fuerte); border-radius: 2px; color: var(--texto-2); cursor: pointer; white-space: nowrap; }
 .btn-mas:hover, .btn-mas.activo { color: var(--texto); border-color: var(--texto-3); }
 .stats-filtros .limpiar { margin-left: auto; }
+@media (max-width: 1399px) {
+  .stats-filtros { column-gap: 14px; }
+  .stats-filtros .segmento button { padding: 4px 7px; }
+  .seg-grupo { gap: 8px; }
+}
 
 .mas-filtros { padding: 4px 16px 10px; border-bottom: 1px solid var(--borde); flex: none; }
 .filtros { display: flex; flex-direction: column; gap: 5px; }
@@ -935,15 +966,20 @@ body.modo-equipos .pantalla-equipos {
 .chip-partido.activo { background: var(--tecla); color: var(--texto); text-decoration: none; }
 
 /* ---------- Jugadores, ¿a quién le arman? y comparar ---------- */
-.tabla .n { display: block; color: var(--texto-3); font-weight: 400; font-size: 11px; }
+.tabla .n { display: block; color: var(--texto-3); font-weight: 400; font-size: 12px; }
 .tabla-aquien, .tabla-comparar { max-width: 760px; }
 .tabla-aquien th:not(:first-child), .tabla-comparar tr:first-child th:not(:first-child) { color: var(--texto-2); font-weight: 600; }
-.tabla-comparar tr.sub th { text-align: left; padding-top: 12px; color: var(--texto-3); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.tabla-comparar tr.sub th { text-align: left; padding-top: 14px; color: var(--texto-3); font-size: 12.5px; font-weight: 500; }
 .tabla-comparar td.dif { color: var(--texto); font-weight: 700; }
 .tabla-comparar td.poco { color: var(--texto-3); opacity: .7; }
 .fichas-jugadores { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 8px; }
-.ficha-jugador { border: 1px solid var(--borde); border-radius: 2px; padding: 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.ficha-jugador { background: var(--fondo-secundario); border-radius: 2px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; border: 1px solid transparent; }
 .ficha-jugador:hover { border-color: var(--borde-control); }
+.filas-jugadores { display: flex; flex-direction: column; max-width: 760px; }
+.fila-jugador { display: flex; align-items: baseline; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--borde); font-size: 12.5px; color: var(--texto-3); cursor: pointer; }
+.fila-jugador b { color: var(--texto); font-weight: 600; }
+.fila-jugador span:last-child { margin-left: auto; color: var(--texto-2); }
+.fila-jugador:hover b { text-decoration: underline; }
 .fj-cab { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .fj-cab b { font-family: var(--display); font-style: italic; font-size: 18px; color: var(--texto); }
 .fj-cab span { color: var(--texto-3); font-size: 12px; }
@@ -955,6 +991,20 @@ body.modo-equipos .pantalla-equipos {
 .ficha-jugador dd b { color: var(--texto); font-weight: 600; }
 .fj-rec { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 12px; color: var(--texto-3); }
 .barra-calif.chica { height: 16px; margin: 0; font-size: 10px; }
+
+/* ---------- Pulido de la auditoría 2026-10-22 ---------- */
+/* Regla «pocos datos» (n < 15): el valor se ve tenue y marcado */
+.poco-dato { color: var(--texto-3); font-weight: 400; }
+/* Equipo y Comparar: el contenido no se estira a todo el ancho */
+.stats-contenido.ancho-limitado > * { max-width: 1100px; }
+/* Etiquetas sobre las canchas: halo del color de la cancha para que no se mezclen con las flechas */
+.stats-contenido svg text, .resumen svg text { paint-order: stroke; stroke: var(--superficie-cancha); stroke-width: 2.2px; stroke-linejoin: round; }
+/* Foco de teclado visible y propio */
+:focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+.campo:focus-visible { outline: none; }
+.solo-lector { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Botón «Ampliar cancha» activo: mismo tratamiento que el resto de lo activo */
+#btn-ampliar.activo { background: var(--tv); color: #fff; }
 
 /* ---------- Resumen en PDF ----------
    En pantalla no se ve. Al imprimir se oculta toda la app y solo queda el resumen,
@@ -1000,6 +1050,8 @@ body.modo-equipos .pantalla-equipos {
 
   .resumen {
     display: block;
+    /* Margen interno: el texto alineado a la derecha no se corta en el borde de la página */
+    padding-right: 1.5mm;
     color: var(--texto);
     font-family: var(--sans);
     font-size: 10px;
@@ -1040,11 +1092,37 @@ body.modo-equipos .pantalla-equipos {
   .resumen .barra-calif { height: 18px; margin: 2px 0 6px; }
   .resumen .barra-calif .seg { font-size: 9px; }
   .resumen .calif-error { color: var(--error); }
-  .resumen .stats-nota { font-size: 9.5px; margin: 4px 0 2px; color: var(--texto-2); }
+  .resumen .stats-nota { margin: 4px 0 2px; }
 
   .r-cancha { width: 86%; margin: 2px auto 0; }
   .r-cancha.chica { width: 62%; }
   .r-cancha .cancha-mini { margin: 0; }
+
+  /* Ataque por zona con muchos ataques: flechas agregadas, 3 por fila */
+  .r-tarjetas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; margin-top: 6px; }
+  .resumen .tarjeta { background: none; padding: 0; gap: 0; border: 0; width: 64%; justify-self: center; }
+  .resumen .tarjeta .cab { font-size: 8.5px; gap: 4px; }
+  .resumen .tarjeta .cab b { font-size: 10px; }
+  .resumen .tarjeta svg { width: 100%; display: block; }
+  .resumen .tarjeta svg text { font-size: 7.4px; }
+  .resumen .tarjeta .pie { display: none; }
+  .resumen svg text { stroke-width: 1.6px; }
+  .r-nota { margin: 2px 0 0; font-size: 8.5px; color: var(--texto-3); }
+
+  /* «¿A quién le arman?» en papel: n chica, máximo visible, nota del tamaño del resto */
+  .resumen .tabla .n { display: inline; margin-left: 3px; font-size: 8px; font-weight: 400; color: var(--texto-3); }
+  .resumen .tabla td.max { font-weight: 700; background: #e4e6e9; }
+  .resumen .stats-nota { font-size: 8.5px; color: var(--texto-3); }
+  .resumen .poco-dato { color: var(--texto-3); font-weight: 400; }
+
+  /* Colores de armada que quedan bajo 3:1 contra la cancha clara: contorno oscuro de 0,5 px (solo PDF) */
+  .resumen :is([stroke="var(--armada-primer)"], [stroke="var(--armada-alta)"], [stroke="var(--armada-rapida)"], [stroke="var(--armada-pipe)"],
+    [fill="var(--armada-primer)"], [fill="var(--armada-alta)"], [fill="var(--armada-rapida)"], [fill="var(--armada-pipe)"]) {
+    filter: drop-shadow(0 0 0.5px rgba(20, 22, 28, 0.95));
+  }
+  .resumen .muestra:is([style*="--armada-primer"], [style*="--armada-alta"], [style*="--armada-rapida"], [style*="--armada-pipe"]) {
+    box-shadow: 0 0 0 0.5px #14161c;
+  }
 
   .r-pie { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--borde); font-size: 8.5px; color: var(--texto-3); text-align: right; }
 }

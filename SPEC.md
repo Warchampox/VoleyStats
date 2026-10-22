@@ -20,10 +20,11 @@ El sitio es una herramienta de scouting a nivel de equipo: muestra cómo juega u
 **«Transmisión»:** se siente como el grafismo de una transmisión de vóley (marcador de TV, bloques sólidos, números condensados en cursiva), no como un dashboard genérico. La energía va en pocos lugares: marcador, panel «Ahora», marca y elementos activos; todo lo demás, sobrio.
 
 - **Tipografía:** Barlow Semi Condensed para toda la interfaz; Barlow Condensed (cursiva 700–800) solo para números y títulos de impacto: marcador, título de «Ahora», marca, tiempo del video, KPIs y eficacia. Números tabulares. Etiquetas en minúscula normal, sin mayúsculas espaciadas.
-- **Color:** fondo grafito azulado. El rojo de transmisión (#E1251B) aparece solo en la línea bajo el header, en lo activo o filtrado (selectores, filtros, rotación) y en el subrayado de la pestaña activa. Los errores usan un rosado distinto. Los colores de armada y de calificación mantienen su significado fijo.
+- **Color:** fondo grafito azulado. El rojo de transmisión (#C81E16, 5,2:1 con el texto claro de los activos) aparece solo en la línea bajo el header, en lo activo o filtrado (selectores, filtros, rotación) y en el subrayado de la pestaña activa. Los errores usan un rosado distinto. Los colores de armada y de calificación mantienen su significado fijo.
 - **Formas:** radios de 2 px; un solo nivel de contenedor, separado por fondo y no por bordes. El panel «Ahora» es una placa clara sólida con teclas negras, como la gráfica de TV.
-- **Contraste:** textos con contraste AA, incluido el panel «Ahora».
-- **Resumen PDF:** tema claro con la misma tipografía.
+- **Contraste:** textos con contraste AA, incluido el panel «Ahora». Bordes de campos y botones secundarios con al menos 3:1 contra el fondo. Foco de teclado visible en todo control.
+- **Captura, reparto de columnas:** el video a la izquierda y la columna derecha (marcador, «Ahora», cancha) con unos 520 px a 1280 de ancho, proporcional en otros anchos (entre 500 y 600 px). El botón «Ampliar cancha», en la cabecera de la cancha, alterna a un reparto con la columna derecha en unos 600 px a 1280 (hasta 720 px), «Ahora» más compacto y el video más chico; se recuerda entre sesiones. La cancha usa todo el espacio que le deja el alto disponible.
+- **Resumen PDF:** tema claro con la misma tipografía. Las marcas de armada en colores que quedan bajo 3:1 contra la cancha clara (primer tiempo, alta, rápida, pipe) llevan un contorno oscuro de 0,5 px, solo en el PDF.
 
 ## Arquitectura
 
@@ -184,13 +185,15 @@ La salida central es la distribución del armador según la rotación y la calid
 | Comparar | Por set, momento o partido (2 a 4 grupos), lado a lado: distribución del armador por zona, dirección de ataque, side-out y a quién le arman. Diferencias de 15 puntos o más destacadas; grupos con menos de 8 jugadas tenues («pocos datos») |
 | Saque y bloqueo | Aces y errores de saque de cada equipo, y puntos de bloqueo del equipo scouteado, por set y por rotación |
 
+**Pocos datos:** cuando un valor se calcula sobre menos de 15 casos (por ejemplo, la eficacia de una zona con 8 ataques), se muestra en gris tenue con «(pocos datos)», en pantalla y en el PDF. En Comparar, los grupos con menos de 8 jugadas se ven tenues.
+
 **Momento del set (calculado, no se guarda):** según el mayor de los dos marcadores antes del rally. Inicio 0–9, Medio 10–19, Final 20 o más; en el 5.º set 0–4, 5–9 y 10 o más.
 
 **Filtros combinables:** set, rotación, momento (Todo · Inicio · Medio · Final), calidad de pase (recepción o defensa), tipo de armada, zona, tipo de golpe, resultado, fase (recepción, contra, cobertura, libre), jugador.
 
 **Lista de clips:** cada filtro produce una lista de jugadas; un click salta al segundo exacto del video.
 
-**Resumen en PDF:** desde Estadísticas, un resumen de 2 páginas A4 para compartir (por ejemplo, por WhatsApp), con el mismo alcance y filtros de la pantalla: encabezado con partidos y resultados, indicadores (side-out, recepción positiva, eficacia de ataque, punto en el 1er ataque), distribución del armador, cancha con las armadas, ataque por zona con trayectorias, side-out, recepción, «¿A quién le arman?» y, si hay jugadores con ficha, una tabla compacta por jugador (zonas, dirección dominante, golpe). Se genera con el diálogo de impresión del navegador («Guardar como PDF»).
+**Resumen en PDF:** desde Estadísticas, un resumen de 2 páginas A4 para compartir (por ejemplo, por WhatsApp), con el mismo alcance y filtros de la pantalla: encabezado con partidos y resultados, indicadores (side-out, recepción positiva, eficacia de ataque, punto en el 1er ataque), distribución del armador, cancha con las armadas, ataque por zona con trayectorias (con más de 40 ataques, flechas agregadas por zona y dirección, como en la pestaña Ataque), side-out, recepción, «¿A quién le arman?» y, si hay jugadores con ficha, una tabla compacta por jugador (zonas, dirección dominante, golpe). Se genera con el diálogo de impresión del navegador («Guardar como PDF»).
 
 Las vistas se irán ajustando con el uso.
 

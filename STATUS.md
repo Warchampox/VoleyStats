@@ -356,5 +356,16 @@ Reemplaza la dirección «Cabina». Solo estilos y tipografía; lógica, layout 
   que descarga un binario ni sus hooks; ver `.claude/skills/LEEME.md`).
 - Informe en `docs/auditoria-2026-10-22.md` con capturas en `docs/auditoria/`. No se cambió el sitio.
 
+## Arreglos de la auditoría (2026-10-22)
+
+- A1–A19 del informe, ancho máximo de 1100 px en Equipo y Comparar, B1 (columna derecha `--col-der`,
+  botón «Ampliar cancha» en `prefs.canchaAmplia`), B2 (`--tv: #C81E16`) y B3 (contorno solo en PDF).
+- Regla «pocos datos» (`conMuestra`, n < 15) en pantalla y PDF.
+- PDF: con más de 40 ataques, tarjetas de flechas agregadas; sigue en 2 páginas con 326 ataques.
+- Cancha de captura: está limitada por el alto. A 1280 mide 381 px normal y 456 px ampliada (hoy 388).
+  Detalle en la sección «Seguimiento» de `docs/auditoria-2026-10-22.md`.
+- CLAUDE.md: reglas de diseño y revisión con impeccable y taste.
+- `?v=26`.
+
 **Siguiente paso:** anotar un set real y ajustar teclas y vistas con el uso; luego fase 6
 (modo rápido, CSV, estadísticas por jugador según uso).

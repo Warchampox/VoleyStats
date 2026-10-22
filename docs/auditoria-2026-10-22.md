@@ -275,3 +275,73 @@ Las capturas están en [auditoria/](auditoria/). Los nombres que empiezan con `a
 - **Animaciones y «momentos de deleite»** (`animate`, `delight`). En una herramienta que se usa mirando un video, cualquier movimiento fuera del video distrae.
 - **Instalar el detector y los hooks de impeccable** para revisar cada cambio. Correrían un programa descargado en cada edición y al cierre de cada turno. Para un sitio de tres archivos, revisar a mano en cada entrega cuesta menos y es más claro (ver `.claude/skills/LEEME.md`).
 - **Llenar la mitad derecha vacía de Equipo y Comparar a 1440** con más bloques. Es mejor limitar el ancho del contenido (unos 1100 px) que inventar contenido para llenarlo.
+
+---
+
+## Seguimiento (2026-10-22, `?v=26`)
+
+Implementé A1–A19, el ancho máximo de Equipo y Comparar, y B1–B3, con las decisiones de Martín. B4, B5 y B6 se mantienen, y no se aplicó nada de la sección C. Después corrí de nuevo `audit` de impeccable sobre las pantallas tocadas, igual que antes: sin detector, en un solo contexto, con Chrome headless y los mismos datos de prueba.
+
+### Puntaje de nuevo
+
+| # | Dimensión | Antes | Ahora | Por qué |
+|---|---|---|---|---|
+| 1 | Accesibilidad | 2 | 3 | Foco propio visible, diálogos que retienen el foco, Enter/Espacio activan lo enfocado, bordes 3,5:1, rojo 5,2:1, `aria-live`, `aria-label` |
+| 2 | Rendimiento | 3 | 3 | Sin cambios |
+| 3 | Temas y tokens | 3 | 3 | Tokens nuevos (`--borde-campo`, `--col-der`); siguen los hex sueltos de antes |
+| 4 | Responsive | 2 | 3 | Sin cortes a 1280, 1366 ni 1440, en los dos modos de captura |
+| 5 | Integridad | 3 | 3 | Sin cambios de identidad |
+| | **Total** | **13/20** | **15/20** | Bueno |
+
+### Lo resuelto
+
+| # | Qué se hizo | Verificado |
+|---|---|---|
+| A1 | Con más de 40 ataques, el PDF usa 6 tarjetas de flechas agregadas (3 por fila). Con menos, sigue la cancha de trayectorias, recortada bajo la línea de títulos | 326 ataques: 2 páginas, sin maraña. Con P1 + Final (11 ataques): trayectorias recortadas a su caja ([PDF filtrado](auditoria/seg-pdf-pagina-2-filtrado.jpg)) |
+| A2 | Con varios partidos, la referencia del clip va en dos líneas («20 sept» / «S1 R17») y la fila crece a 36 px | [seg-clips-dos-lineas.png](auditoria/seg-clips-dos-lineas.png) |
+| A3 | Marcador en dos filas: set y rotación arriba, tanteo a todo el ancho abajo | Nombres completos a 1280, 1366 y 1440 (medido: ningún nombre cortado) |
+| A4 | El título de «Ahora» puede usar dos líneas; en foco baja a 32 px | «Rally 32 cerrado · punto Católica» completo a 1280 ([foco](auditoria/seg-1280-captura-foco.jpg)) |
+| A5 | Historial con degradado arriba y filas de 21 px bajo 760 px de alto | La primera fila ya no aparece cortada en seco. Sigue habiendo scroll a 1280 en modo normal, a propósito |
+| A6 | Tab y Shift+Tab circulan dentro del diálogo; al cerrar, el foco vuelve a quien lo tenía; `aria-labelledby` al título | 12 Tab seguidos en «Partido nuevo»: el foco nunca salió del diálogo |
+| A7 | `pointerup` → `blur` en botones y casillas; Enter y Espacio sobre un control enfocado lo activan y no van a los atajos | Clic con mouse en «Foco» y luego Enter: crea el rally 32. Tab hasta «Foco» y Enter: entra al foco sin crear rally |
+| A8 | `--borde-campo: #6B7385` en campos y `.btn`. El foco de un campo es blanco con un anillo de 1 px | 3,46:1 contra el fondo |
+| A9 | Halo del color de la cancha detrás de las etiquetas del SVG; etiquetas de 6,2 unidades y más separadas de la flecha | [Ataque a 1280](auditoria/seg-1280-stats-ataque.jpg) |
+| A10 | Los impactos fuera de la cancha se dibujan en el borde de la caja | Z1 y Z5 sin líneas fuera de la tarjeta |
+| A11 | «Guardar como copia» es la principal, «Reemplazar» secundaria, y el foco inicial queda en «Omitir» | [Diálogo](auditoria/seg-1440-dialogo-importar-conflicto.jpg) |
+| A12 | PDF: n chica junto al encabezado, máximo en negrita con fondo gris, notas a 8,5 px, margen derecho de 1,5 mm | «= 8 %» y el pie ya no se cortan |
+| A13 | Subtítulos de Comparar en minúscula normal | Captura de Comparar |
+| A14 | «Rallies en que Católica recibe»; «Guardado: Católica scouteado, sets 3–1, 178 rallies» | Texto en pantalla |
+| A15 | «Jugador a la última acción (N N quita)» en una línea | Ayuda |
+| A16 | Región `aria-live` para los avisos, `aria-label` en los botones de video, `:focus-visible` propio | 0 botones con nombre solo en `title` |
+| A17 | Bajo 1400 px los filtros se compactan (espacios y relleno) | A 1280 caben en una fila ([Ataque a 1280](auditoria/seg-1280-stats-ataque.jpg)) |
+| A18 | Fichas separadas por fondo, sin borde. Quienes no atacan van en filas compactas bajo las fichas | [Jugadores](auditoria/seg-1440-stats-jugadores.jpg): «#1 Rojas · líbero · 42 recepciones, 52 % positiva» |
+| A19 | `conMuestra()`: con 1 a 14 casos, el valor va en `--texto-3` con «(pocos datos)». Aplica a las tarjetas y tablas de Ataque, al KPI de eficacia y al PDF; con 0 casos solo «—» | PDF filtrado: «+20 % (pocos datos)» |
+| C | Equipo y Comparar con el contenido limitado a 1100 px | Captura de Comparar a 1440 |
+| B1 | `--col-der` (normal: 500–600 px, unos 520 a 1280; ampliada: 600–720 px) y botón «Ampliar cancha», recordado en `prefs`. En ampliada, «Ahora» se compacta (226 px) para darle alto a la cancha. La cancha ya no tiene el tope fijo de 480 px | Tabla de abajo |
+| B2 | `--tv: #C81E16` | 5,22:1 con `#F3F4F6`, 5,75:1 con blanco |
+| B3 | Solo en el PDF: contorno oscuro de 0,5 px (`drop-shadow`) en marcas y muestras de primer tiempo (1,2:1), alta (2,1:1), rápida (2,05:1) y pipe (2,78:1). Emergencia (3,1:1) y segunda (4,7:1) quedan sin contorno | [PDF página 2](auditoria/seg-pdf-pagina-2.jpg) |
+
+### Ancho de la cancha de captura (B1)
+
+La cancha está limitada por el **alto** disponible, no por el ancho. Por eso el reparto normal casi no la cambia, y el aumento real viene del modo ampliado, que le da más alto. Medí el dibujo completo (viewBox 220×130) y, entre paréntesis, el rectángulo de la cancha, en el paso Resultado.
+
+| Pantalla | Hoy (`?v=25`) | Normal nuevo | Ampliada | Video normal → ampliada |
+|---|---|---|---|---|
+| 1280×720 | 388 px (317) | 381 px (312) | **456 px (373)** | 712 → 632 px de ancho |
+| 1366×768 | 469 px (384) | 463 px (379) | **537 px (439)** | 763 → 677 px |
+| 1440×812 | 480 px (393) | **537 px (439)** | **612 px (500)** | 807 → 717 px |
+
+- En los 6 casos el video se ve completo (16:9), la página no tiene scroll y no hay cortes en marcador, «Ahora» ni cancha.
+- A 1280 y 1366, el reparto normal deja la cancha un 2 % más chica que hoy. El marcador ahora usa dos filas para no cortar nombres, y la cancha pierde ese alto.
+- La ampliada le da a la cancha un **+18 %** a 1280 y un **+27 %** a 1440 respecto de hoy.
+
+Capturas: [1280 normal](auditoria/seg-1280-captura-resultado.jpg), [1280 ampliada](auditoria/seg-1280-captura-resultado-ampliada.jpg).
+
+### Lo que queda pendiente
+
+- **Cancha en modo normal a 1280 y 1366:** no creció; quedó un 2 % más chica (ver tabla). Si Martín anota a 1280, lo útil es dejar «Ampliar cancha» activado. Una opción a revisar: compactar «Ahora» también en el modo normal.
+- **Dos rojos juntos:** con «Ampliar cancha» activo quedan dos botones rojos lado a lado («Ampliar cancha» y «Rally»). Sigue la regla de «rojo en lo activo», pero pesa en la cabecera de la cancha. A revisar con Martín si molesta.
+- **Contorno del PDF:** el de B3 se hace con `drop-shadow` y en papel se ve como un borde suave, no como una línea nítida. Si hace falta más definición, habría que dibujar un trazo oscuro bajo cada flecha (cambio en `dibujarJugada` y `tarjetaZona`).
+- **Textos chicos:** la «n» bajo los encabezados de «¿A quién le arman?» y de Comparar pasó de 11 a 12 px. Queda solo la flecha ▸ de los plegables, a 10 px; es un ícono, no texto de lectura.
+- **Panel «Ahora» con rally cerrado:** sigue con unos 100 px vacíos. No estaba en esta ronda.
+- **`audit` sin detector:** se repitió sin el programa de impeccable (ver `.claude/skills/LEEME.md`).

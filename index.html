@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,600;1,700;1,800&family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="estilos.css?v=25">
+  <link rel="stylesheet" href="estilos.css?v=26">
 </head>
 <body>
   <header class="cabecera">
@@ -76,14 +76,14 @@
 
     <!-- ===== Captura: columna izquierda ===== -->
     <div class="controles solo-captura" id="controles">
-      <button class="ctl" id="btn-atras" title="−3 s">
+      <button class="ctl" id="btn-atras" title="−3 s" aria-label="Retroceder 3 segundos">
         <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M8 2L3 7l5 5M15 2l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
       </button>
-      <button class="ctl" id="btn-play" title="Reproducir / pausar"></button>
-      <button class="ctl" id="btn-adelante" title="+3 s">
+      <button class="ctl" id="btn-play" title="Reproducir / pausar" aria-label="Reproducir o pausar"></button>
+      <button class="ctl" id="btn-adelante" title="+3 s" aria-label="Avanzar 3 segundos">
         <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M3 2l5 5-5 5M10 2l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
       </button>
-      <button class="ctl" id="btn-sonido" title="Silenciar"></button>
+      <button class="ctl" id="btn-sonido" title="Silenciar" aria-label="Silenciar o activar sonido"></button>
       <div class="menu-ancla">
         <button class="ctl ctl-texto" id="btn-velocidad" title="Velocidad">1× ▾</button>
         <div class="menu menu-arriba" id="menu-velocidad" hidden></div>
@@ -147,6 +147,7 @@
               <button class="btn-tenue chico" id="btn-jugador"></button>
               <div class="jug-popover" id="jug-popover" hidden></div>
             </div>
+            <button class="btn-tenue chico" id="btn-ampliar" aria-pressed="false">Ampliar cancha</button>
             <div class="selector tenue" id="selector-vista">
               <button data-vista="rally" class="activo">Rally</button>
               <button data-vista="set">Set</button>
@@ -198,9 +199,12 @@
 
   <div class="modal" id="modal" hidden></div>
 
+  <!-- Avisos breves para lectores de pantalla -->
+  <div class="solo-lector" id="aviso-vivo" aria-live="polite"></div>
+
   <!-- Resumen para imprimir / guardar como PDF: solo se ve con @media print -->
   <div class="resumen" id="resumen"></div>
 
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>
